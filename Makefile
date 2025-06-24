@@ -3,7 +3,7 @@
 
 # Project settings
 PROJECT_NAME := bouncing-balls
-MODULE_NAME := github.com/atyronesmith/bouncing-balls
+MODULE_NAME := github.com/asmith/bouncing-balls
 CMD_DIR := cmd/bouncing-balls
 PKG_DIR := pkg
 BUILD_DIR := build
