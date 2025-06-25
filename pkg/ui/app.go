@@ -18,6 +18,7 @@ type App struct {
 	window  fyne.Window
 	balls   []*physics.Ball
 	human   *physics.Human
+	dragon  *physics.Dragon
 }
 
 // NewApp creates a new application instance
@@ -32,7 +33,7 @@ func (a *App) Run() {
 	a.fyneApp.SetIcon(nil)
 
 	// Create a larger window for bouncing animation
-	a.window = a.fyneApp.NewWindow("Human vs Bouncing Balls - macOS")
+	a.window = a.fyneApp.NewWindow("Dragon Chases Balls + Human Keyboard Control - macOS")
 	a.window.Resize(fyne.NewSize(800, 600))
 	a.window.CenterOnScreen()
 
@@ -67,12 +68,15 @@ func (a *App) Run() {
 	// Create the human figure (same size as largest ball - ball3 has radius 35)
 	a.human = physics.NewHuman(400, 300, 35) // Center of screen, size of largest ball
 
+	// Create the dragon (slightly larger than human, positioned differently)
+	a.dragon = physics.NewDragon(200, 200, 40) // Upper left area, slightly larger than human
+
 	// Lightning system
 	var activeLightning []*effects.Lightning
 	frameCount := 0
 
 	// Create instruction label
-	label := widget.NewLabel("⚡🌟 Lightning Collisions + Glowing Particle Trails + Human AI Dodging!")
+	label := widget.NewLabel("⚡🌟🐉⌨️ Lightning + Trails + Dragon Chasing + Human Keyboard Control (Arrow Keys)!")
 	label.Alignment = fyne.TextAlignCenter
 
 	// Create UI controls
@@ -93,6 +97,11 @@ func (a *App) Run() {
 	content.Add(ball2.Circle) // Red circle
 	content.Add(ball3.Circle) // Green circle
 
+	// Add ball text labels
+	content.Add(ball1.Text) // Blue ball text
+	content.Add(ball2.Text) // Red ball text
+	content.Add(ball3.Text) // Green ball text
+
 	// Add human figure components
 	content.Add(a.human.Head)
 	content.Add(a.human.Body)
@@ -100,6 +109,12 @@ func (a *App) Run() {
 	content.Add(a.human.RightArm)
 	content.Add(a.human.LeftLeg)
 	content.Add(a.human.RightLeg)
+
+	// Add dragon figure components
+	dragonComponents := a.dragon.GetVisualComponents()
+	for _, component := range dragonComponents {
+		content.Add(component)
+	}
 
 	// Create the full layout
 	fullContent := container.NewVBox(
@@ -110,6 +125,26 @@ func (a *App) Run() {
 
 	// Set the content
 	a.window.SetContent(fullContent)
+
+		// Set up keyboard event handling for continuous key presses
+	// We'll use a map to track key press timestamps for auto-release
+	keyTimestamps := make(map[fyne.KeyName]int)
+	keyTimeout := 3 // frames before auto-release (at 60fps = ~50ms)
+
+	a.window.Canvas().SetOnTypedKey(func(key *fyne.KeyEvent) {
+		switch key.Name {
+		case fyne.KeyUp, fyne.KeyDown, fyne.KeyLeft, fyne.KeyRight:
+			keyTimestamps[key.Name] = frameCount
+		}
+	})
+
+	// Update human key states based on recent key presses
+	updateKeyStates := func() {
+		a.human.KeyUp = (frameCount - keyTimestamps[fyne.KeyUp]) < keyTimeout
+		a.human.KeyDown = (frameCount - keyTimestamps[fyne.KeyDown]) < keyTimeout
+		a.human.KeyLeft = (frameCount - keyTimestamps[fyne.KeyLeft]) < keyTimeout
+		a.human.KeyRight = (frameCount - keyTimestamps[fyne.KeyRight]) < keyTimeout
+	}
 
 	// Start the animation automatically for all balls
 	for _, ball := range a.balls {
@@ -122,6 +157,9 @@ func (a *App) Run() {
 		defer ticker.Stop()
 		for range ticker.C {
 			frameCount++
+
+			// Update keyboard states
+			updateKeyStates()
 
 			// Update all ball positions (wall bouncing)
 			for _, ball := range a.balls {
@@ -159,8 +197,8 @@ func (a *App) Run() {
 			if a.human.IsExploding {
 				a.human.UpdateExplosion()
 			} else {
-				// Update human avoidance behavior
-				a.human.AvoidBalls(a.balls)
+				// Update human behavior (includes keyboard control and AI avoidance)
+				a.human.Update(a.balls)
 
 				// Check for collisions with balls
 				if a.human.CheckCollisionWithBalls(a.balls) {
@@ -174,6 +212,10 @@ func (a *App) Run() {
 					}
 				}
 			}
+
+			// Update dragon behavior (handles collision, drifting, spinning, and chasing)
+			a.dragon.Update(a.balls)
+			a.dragon.UpdatePosition()
 		}
 	}()
 
@@ -253,6 +295,15 @@ func (a *App) createControls() *fyne.Container {
 		println("Human Deaths:", a.human.Deaths)
 	})
 
+	dragonButton := widget.NewButton("🐉 Toggle Dragon", func() {
+		a.dragon.IsActive = !a.dragon.IsActive
+		if !a.dragon.IsActive {
+			a.dragon.Hide()
+		} else {
+			a.dragon.Show()
+		}
+	})
+
 	resetButton := widget.NewButton("🔄 Reset All", func() {
 		a.resetAll()
 	})
@@ -271,6 +322,7 @@ func (a *App) createControls() *fyne.Container {
 		massInfoButton,
 		humanButton,
 		deathCountButton,
+		dragonButton,
 		resetButton,
 		quitButton,
 	)
@@ -299,6 +351,10 @@ func (a *App) resetAll() {
 	a.human.IsActive = true
 	a.human.RespawnTimer = 0
 	a.human.Deaths = 0
+	a.human.KeyUp = false
+	a.human.KeyDown = false
+	a.human.KeyLeft = false
+	a.human.KeyRight = false
 
 	// Show human components
 	a.human.Head.Show()
@@ -318,4 +374,16 @@ func (a *App) resetAll() {
 		}
 		a.human.ExplosionParticles = nil
 	}
+
+	// Reset dragon
+	a.dragon.X, a.dragon.Y = 200, 200
+	a.dragon.VX, a.dragon.VY = 0, 0
+	a.dragon.IsActive = true
+	a.dragon.IsDrifting = false
+	a.dragon.DriftTimer = 0
+	a.dragon.IsSpinning = false
+	a.dragon.SpinAngle = 0
+	a.dragon.SpinCount = 0
+	a.dragon.Show()
+	a.dragon.UpdatePosition()
 }

@@ -3,6 +3,7 @@ package physics
 import (
 	"image/color"
 	"math"
+	"math/rand"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -14,33 +15,91 @@ type Ball struct {
 	VX, VY     float32 // velocity
 	Radius     float32 // ball radius
 	Circle     *canvas.Circle
-	Bounds     fyne.Size // animation bounds
-	IsAnimated bool      // whether animation is running
+	Text       *canvas.Text // AI LLM name label
+	LLMName    string        // AI LLM name
+	Bounds     fyne.Size     // animation bounds
+	IsAnimated bool          // whether animation is running
 	// Particle trail system
 	Trail      []*canvas.Circle
 	TrailIndex int
 }
 
+// AI LLM names to choose from
+var llmNames = []string{
+	"GPT-4",
+	"Claude",
+	"Gemini",
+	"LLaMA",
+	"PaLM",
+	"Bard",
+	"ChatGPT",
+	"Codex",
+	"Alpaca",
+	"Vicuna",
+	"Mistral",
+	"Llama2",
+}
+
+// getRandomLLMName returns a random AI LLM name
+func getRandomLLMName() string {
+	return llmNames[rand.Intn(len(llmNames))]
+}
+
+// updateTextSize calculates and sets the appropriate font size for the text to fit inside the ball
+func (b *Ball) updateTextSize() {
+	if b.Text == nil {
+		return
+	}
+
+	// Simple font size based on ball radius
+	// Larger balls get larger text, smaller balls get smaller text
+	fontSize := b.Radius * 0.4 // Scale factor based on radius
+
+	// Ensure reasonable bounds
+	if fontSize < 8 {
+		fontSize = 8
+	} else if fontSize > 20 {
+		fontSize = 20
+	}
+
+	// Apply the font size
+	b.Text.TextSize = fontSize
+}
+
 // NewBall creates a new bouncing ball
 func NewBall() *Ball {
 	ball := &Ball{
-		X:      100,
-		Y:      100,
-		VX:     3.5, // horizontal velocity
-		VY:     2.8, // vertical velocity
-		Radius: 30,
-		Bounds: fyne.NewSize(800, 600),
+		X:       100,
+		Y:       100,
+		VX:      3.5, // horizontal velocity
+		VY:      2.8, // vertical velocity
+		Radius:  30,
+		Bounds:  fyne.NewSize(800, 600),
+		LLMName: getRandomLLMName(),
 	}
 
-	// Create the visual circle
+	// Create the visual circle with no stroke
 	ball.Circle = &canvas.Circle{
 		FillColor:   color.RGBA{R: 100, G: 150, B: 255, A: 255}, // Light blue
-		StrokeColor: color.RGBA{R: 255, G: 50, B: 50, A: 255},   // Red border
-		StrokeWidth: 3.0,
+		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 0},         // No stroke
+		StrokeWidth: 0,                                           // No stroke width
+	}
+
+	// Create the text label for the AI LLM name
+	ball.Text = &canvas.Text{
+		Text:      ball.LLMName,
+		Color:     color.RGBA{R: 255, G: 255, B: 255, A: 255}, // White text
+		Alignment: fyne.TextAlignCenter,
+		TextStyle: fyne.TextStyle{Bold: true},
+		TextSize:  12, // Initial size, will be adjusted
 	}
 
 	// Set initial size and position
 	ball.Circle.Resize(fyne.NewSize(ball.Radius*2, ball.Radius*2))
+
+	// Set font size to fit inside ball
+	ball.updateTextSize()
+
 	ball.updatePosition()
 
 	// Initialize particle trail
@@ -95,9 +154,21 @@ func (b *Ball) updateTrail() {
 	b.TrailIndex = (b.TrailIndex + 1) % len(b.Trail)
 }
 
-// updatePosition updates the visual position of the circle
+// updatePosition updates the visual position of the circle and text
 func (b *Ball) updatePosition() {
 	b.Circle.Move(fyne.NewPos(b.X-b.Radius, b.Y-b.Radius))
+
+	// Update text position to center on ball
+	if b.Text != nil {
+		textSize := b.Text.MinSize()
+		// Position text so its center aligns with ball center
+		textX := b.X - textSize.Width/2
+		textY := b.Y - textSize.Height/2
+		b.Text.Move(fyne.NewPos(textX, textY))
+		// Set text size to match its content
+		b.Text.Resize(textSize)
+	}
+
 	// Update trail
 	b.updateTrail()
 }
@@ -249,23 +320,37 @@ func (b *Ball) ChangeColor() {
 // NewCustomBall creates a ball with custom properties
 func NewCustomBall(x, y, vx, vy, radius float32, fillColor, strokeColor color.RGBA) *Ball {
 	ball := &Ball{
-		X:      x,
-		Y:      y,
-		VX:     vx,
-		VY:     vy,
-		Radius: radius,
-		Bounds: fyne.NewSize(800, 600),
+		X:       x,
+		Y:       y,
+		VX:      vx,
+		VY:      vy,
+		Radius:  radius,
+		Bounds:  fyne.NewSize(800, 600),
+		LLMName: getRandomLLMName(),
 	}
 
-	// Create the visual circle with custom colors
+	// Create the visual circle with no stroke (ignoring strokeColor parameter)
 	ball.Circle = &canvas.Circle{
 		FillColor:   fillColor,
-		StrokeColor: strokeColor,
-		StrokeWidth: 3.0,
+		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 0}, // No stroke
+		StrokeWidth: 0,                                   // No stroke width
+	}
+
+	// Create the text label for the AI LLM name
+	ball.Text = &canvas.Text{
+		Text:      ball.LLMName,
+		Color:     color.RGBA{R: 255, G: 255, B: 255, A: 255}, // White text
+		Alignment: fyne.TextAlignCenter,
+		TextStyle: fyne.TextStyle{Bold: true},
+		TextSize:  12, // Initial size, will be adjusted
 	}
 
 	// Set initial size and position
 	ball.Circle.Resize(fyne.NewSize(ball.Radius*2, ball.Radius*2))
+
+	// Set font size to fit inside ball
+	ball.updateTextSize()
+
 	ball.updatePosition()
 
 	// Initialize particle trail

@@ -18,6 +18,11 @@ type Human struct {
 	IsExploding  bool      // whether the human is currently exploding
 	RespawnTimer int       // frames until respawn
 	Deaths       int       // death counter
+	// Keyboard control state
+	KeyUp        bool      // up arrow key pressed
+	KeyDown      bool      // down arrow key pressed
+	KeyLeft      bool      // left arrow key pressed
+	KeyRight     bool      // right arrow key pressed
 	// Visual components
 	Head     *canvas.Circle
 	Body     *canvas.Rectangle
@@ -117,12 +122,59 @@ func (h *Human) UpdatePosition() {
 	h.RightLeg.Move(fyne.NewPos(h.X+h.Size*0.06, h.Y+h.Size*0.1))
 }
 
-// AvoidBalls implements improved AI behavior to avoid approaching balls
-func (h *Human) AvoidBalls(balls []*Ball) {
+// Update handles both keyboard input and AI avoidance behavior
+func (h *Human) Update(balls []*Ball) {
 	if !h.IsActive {
 		return
 	}
 
+	// Check if any keyboard keys are pressed
+	keyboardActive := h.KeyUp || h.KeyDown || h.KeyLeft || h.KeyRight
+
+	var moveX, moveY float32
+
+	if keyboardActive {
+		// Keyboard control mode - player has partial control
+		if h.KeyUp {
+			moveY -= h.Speed
+		}
+		if h.KeyDown {
+			moveY += h.Speed
+		}
+		if h.KeyLeft {
+			moveX -= h.Speed
+		}
+		if h.KeyRight {
+			moveX += h.Speed
+		}
+
+		// Still apply AI avoidance as a safety override when in extreme danger
+		avoidanceX, avoidanceY := h.calculateAvoidance(balls)
+
+		// If there's significant danger, blend keyboard input with avoidance
+		if avoidanceX != 0 || avoidanceY != 0 {
+			// Reduce keyboard influence and add avoidance influence
+			moveX = moveX*0.3 + avoidanceX*0.7
+			moveY = moveY*0.3 + avoidanceY*0.7
+		}
+	} else {
+		// Pure AI avoidance mode (original behavior)
+		moveX, moveY = h.calculateAvoidance(balls)
+	}
+
+	// Apply movement
+	h.X += moveX
+	h.Y += moveY
+
+	// Keep human within bounds
+	h.keepWithinBounds()
+
+	// Update visual position
+	h.UpdatePosition()
+}
+
+// calculateAvoidance calculates AI avoidance movement (extracted from original AvoidBalls method)
+func (h *Human) calculateAvoidance(balls []*Ball) (float32, float32) {
 	var totalAvoidanceX, totalAvoidanceY float32
 	dangerCount := 0
 	maxDanger := float32(0)
@@ -175,7 +227,7 @@ func (h *Human) AvoidBalls(balls []*Ball) {
 		}
 	}
 
-	// Apply avoidance movement
+	// Calculate avoidance movement
 	if dangerCount > 0 {
 		// Normalize avoidance vector
 		avgAvoidanceX := totalAvoidanceX / float32(dangerCount)
@@ -189,25 +241,24 @@ func (h *Human) AvoidBalls(balls []*Ball) {
 			speedMultiplier *= 1.5 // 50% speed boost in moderate danger
 		}
 
-		// Apply movement with enhanced speed
-		h.X += avgAvoidanceX * speedMultiplier
-		h.Y += avgAvoidanceY * speedMultiplier
+		return avgAvoidanceX * speedMultiplier, avgAvoidanceY * speedMultiplier
+	}
 
-		// Keep human within bounds
-		margin := h.Size * 0.5 // Reduced margin for more movement space
-		if h.X < margin {
-			h.X = margin
-		} else if h.X > h.Bounds.Width-margin {
-			h.X = h.Bounds.Width - margin
-		}
+	return 0, 0
+}
 
-		if h.Y < 50+margin { // Account for button area
-			h.Y = 50 + margin
-		} else if h.Y > h.Bounds.Height-50-margin {
-			h.Y = h.Bounds.Height - 50 - margin
-		}
-
-		h.UpdatePosition()
+// keepWithinBounds ensures human stays within window boundaries
+func (h *Human) keepWithinBounds() {
+	margin := h.Size * 0.5 // Reduced margin for more movement space
+	if h.X < margin {
+		h.X = margin
+	} else if h.X > h.Bounds.Width-margin {
+		h.X = h.Bounds.Width - margin
+	}
+	if h.Y < 50+margin { // Account for button area
+		h.Y = 50 + margin
+	} else if h.Y > h.Bounds.Height-50-margin {
+		h.Y = h.Bounds.Height - 50 - margin
 	}
 }
 
