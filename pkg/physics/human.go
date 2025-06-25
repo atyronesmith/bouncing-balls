@@ -19,17 +19,22 @@ type Human struct {
 	RespawnTimer int       // frames until respawn
 	Deaths       int       // death counter
 	// Keyboard control state
-	KeyUp        bool      // up arrow key pressed
-	KeyDown      bool      // down arrow key pressed
-	KeyLeft      bool      // left arrow key pressed
-	KeyRight     bool      // right arrow key pressed
+	KeyUp    bool // up arrow key pressed
+	KeyDown  bool // down arrow key pressed
+	KeyLeft  bool // left arrow key pressed
+	KeyRight bool // right arrow key pressed
 	// Visual components
 	Head     *canvas.Circle
 	Body     *canvas.Rectangle
-	LeftArm  *canvas.Rectangle
-	RightArm *canvas.Rectangle
+	LeftArm  *canvas.Line
+	RightArm *canvas.Line
 	LeftLeg  *canvas.Rectangle
 	RightLeg *canvas.Rectangle
+	// Eye components
+	LeftEye    *canvas.Circle // Left eye white
+	RightEye   *canvas.Circle // Right eye white
+	LeftPupil  *canvas.Circle // Left pupil (tracks balls)
+	RightPupil *canvas.Circle // Right pupil (tracks balls)
 	// Explosion particles
 	ExplosionParticles []*canvas.Circle
 }
@@ -65,20 +70,26 @@ func NewHuman(x, y, size float32) *Human {
 	}
 	human.Body.Resize(fyne.NewSize(size*0.3, size*0.6))
 
-	// Arms (rectangles)
-	human.LeftArm = &canvas.Rectangle{
-		FillColor:   humanColor,
-		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 255},
-		StrokeWidth: 1.0,
+	// Arms (lines)
+	human.LeftArm = &canvas.Line{
+		StrokeColor: humanColor,
+		StrokeWidth: 4.0, // Thicker line to make arms more visible
 	}
-	human.LeftArm.Resize(fyne.NewSize(size*0.15, size*0.4))
+	// Set initial left arm position (from shoulder to default position)
+	leftShoulderX := x - size*0.15
+	leftShoulderY := y - size*0.1
+	human.LeftArm.Position1 = fyne.NewPos(leftShoulderX, leftShoulderY)
+	human.LeftArm.Position2 = fyne.NewPos(leftShoulderX-size*0.2, leftShoulderY+size*0.3)
 
-	human.RightArm = &canvas.Rectangle{
-		FillColor:   humanColor,
-		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 255},
-		StrokeWidth: 1.0,
+	human.RightArm = &canvas.Line{
+		StrokeColor: humanColor,
+		StrokeWidth: 4.0, // Thicker line to make arms more visible
 	}
-	human.RightArm.Resize(fyne.NewSize(size*0.15, size*0.4))
+	// Set initial right arm position (from shoulder to default position)
+	rightShoulderX := x + size*0.15
+	rightShoulderY := y - size*0.1
+	human.RightArm.Position1 = fyne.NewPos(rightShoulderX, rightShoulderY)
+	human.RightArm.Position2 = fyne.NewPos(rightShoulderX+size*0.2, rightShoulderY+size*0.3)
 
 	// Legs (rectangles)
 	human.LeftLeg = &canvas.Rectangle{
@@ -94,6 +105,42 @@ func NewHuman(x, y, size float32) *Human {
 		StrokeWidth: 1.0,
 	}
 	human.RightLeg.Resize(fyne.NewSize(size*0.12, size*0.5))
+
+	// Eyes (circles on the head)
+	eyeColor := color.RGBA{R: 255, G: 255, B: 255, A: 255} // White eyes
+	pupilColor := color.RGBA{R: 0, G: 0, B: 0, A: 255}     // Black pupils
+
+	// Left eye
+	human.LeftEye = &canvas.Circle{
+		FillColor:   eyeColor,
+		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 255},
+		StrokeWidth: 1.0,
+	}
+	human.LeftEye.Resize(fyne.NewSize(size*0.08, size*0.08))
+
+	// Right eye
+	human.RightEye = &canvas.Circle{
+		FillColor:   eyeColor,
+		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 255},
+		StrokeWidth: 1.0,
+	}
+	human.RightEye.Resize(fyne.NewSize(size*0.08, size*0.08))
+
+	// Left pupil
+	human.LeftPupil = &canvas.Circle{
+		FillColor:   pupilColor,
+		StrokeColor: pupilColor,
+		StrokeWidth: 0.0,
+	}
+	human.LeftPupil.Resize(fyne.NewSize(size*0.04, size*0.04))
+
+	// Right pupil
+	human.RightPupil = &canvas.Circle{
+		FillColor:   pupilColor,
+		StrokeColor: pupilColor,
+		StrokeWidth: 0.0,
+	}
+	human.RightPupil.Resize(fyne.NewSize(size*0.04, size*0.04))
 
 	// Set initial position
 	human.UpdatePosition()
@@ -113,13 +160,53 @@ func (h *Human) UpdatePosition() {
 	// Body position (center)
 	h.Body.Move(fyne.NewPos(h.X-h.Size*0.15, h.Y-h.Size*0.2))
 
-	// Arms positions (sides of body)
-	h.LeftArm.Move(fyne.NewPos(h.X-h.Size*0.3, h.Y-h.Size*0.15))
-	h.RightArm.Move(fyne.NewPos(h.X+h.Size*0.15, h.Y-h.Size*0.15))
+	// Arms positions (lines from shoulders)
+	leftShoulderX := h.X - h.Size*0.15
+	leftShoulderY := h.Y - h.Size*0.1
+	rightShoulderX := h.X + h.Size*0.15
+	rightShoulderY := h.Y - h.Size*0.1
+
+	// Default arm positions (will be overridden by pointing logic)
+	h.LeftArm.Position1 = fyne.NewPos(leftShoulderX, leftShoulderY)
+	h.LeftArm.Position2 = fyne.NewPos(leftShoulderX-h.Size*0.2, leftShoulderY+h.Size*0.3)
+	h.RightArm.Position1 = fyne.NewPos(rightShoulderX, rightShoulderY)
+	h.RightArm.Position2 = fyne.NewPos(rightShoulderX+h.Size*0.2, rightShoulderY+h.Size*0.3)
 
 	// Legs positions (bottom of body)
 	h.LeftLeg.Move(fyne.NewPos(h.X-h.Size*0.12, h.Y+h.Size*0.1))
 	h.RightLeg.Move(fyne.NewPos(h.X+h.Size*0.06, h.Y+h.Size*0.1))
+
+	// Eye positions (on the head)
+	h.LeftEye.Move(fyne.NewPos(h.X-h.Size*0.12, h.Y-h.Size*0.55))
+	h.RightEye.Move(fyne.NewPos(h.X+h.Size*0.04, h.Y-h.Size*0.55))
+
+	// Pupil positions (centered in eyes)
+	h.LeftPupil.Move(fyne.NewPos(h.X-h.Size*0.1, h.Y-h.Size*0.53))
+	h.RightPupil.Move(fyne.NewPos(h.X+h.Size*0.06, h.Y-h.Size*0.53))
+}
+
+// findClosestBall finds the closest animated ball to the human
+func (h *Human) findClosestBall(balls []*Ball) *Ball {
+	var closestBall *Ball
+	minDistance := float32(math.Inf(1))
+
+	for _, ball := range balls {
+		if !ball.IsAnimated {
+			continue
+		}
+
+		// Calculate distance to ball
+		dx := h.X - ball.X
+		dy := h.Y - ball.Y
+		distance := float32(math.Sqrt(float64(dx*dx + dy*dy)))
+
+		if distance < minDistance {
+			minDistance = distance
+			closestBall = ball
+		}
+	}
+
+	return closestBall
 }
 
 // Update handles both keyboard input and AI avoidance behavior
@@ -158,8 +245,19 @@ func (h *Human) Update(balls []*Ball) {
 			moveY = moveY*0.3 + avoidanceY*0.7
 		}
 	} else {
-		// Pure AI avoidance mode (original behavior)
-		moveX, moveY = h.calculateAvoidance(balls)
+		// AI mode: combine avoidance with centering behavior
+		avoidanceX, avoidanceY := h.calculateAvoidance(balls)
+		centeringX, centeringY := h.calculateCentering()
+
+		if avoidanceX != 0 || avoidanceY != 0 {
+			// In danger: prioritize avoidance but add slight centering influence
+			moveX = avoidanceX*0.9 + centeringX*0.1
+			moveY = avoidanceY*0.9 + centeringY*0.1
+		} else {
+			// Safe: move toward center
+			moveX = centeringX
+			moveY = centeringY
+		}
 	}
 
 	// Apply movement
@@ -171,6 +269,9 @@ func (h *Human) Update(balls []*Ball) {
 
 	// Update visual position
 	h.UpdatePosition()
+
+	// Update arms to point at closest ball
+	h.UpdatePointing(balls)
 }
 
 // calculateAvoidance calculates AI avoidance movement (extracted from original AvoidBalls method)
@@ -247,14 +348,46 @@ func (h *Human) calculateAvoidance(balls []*Ball) (float32, float32) {
 	return 0, 0
 }
 
-// keepWithinBounds ensures human stays within window boundaries
-func (h *Human) keepWithinBounds() {
-	margin := h.Size * 0.5 // Reduced margin for more movement space
-	if h.X < margin {
-		h.X = margin
-	} else if h.X > h.Bounds.Width-margin {
-		h.X = h.Bounds.Width - margin
+// calculateCentering calculates movement toward the center of the panel
+func (h *Human) calculateCentering() (float32, float32) {
+	// Calculate center of the panel
+	centerX := h.Bounds.Width / 2
+	centerY := (h.Bounds.Height + 50) / 2 // Account for button area (50px top, 50px bottom)
+
+	// Calculate distance to center
+	dx := centerX - h.X
+	dy := centerY - h.Y
+	distance := float32(math.Sqrt(float64(dx*dx + dy*dy)))
+
+	// If already very close to center, don't move
+	if distance < 20 {
+		return 0, 0
 	}
+
+	// Normalize direction and apply gentle centering force
+	if distance > 0 {
+		centeringStrength := h.Speed * 0.3 // Gentle centering force (30% of normal speed)
+		normalizedDx := dx / distance
+		normalizedDy := dy / distance
+
+		return normalizedDx * centeringStrength, normalizedDy * centeringStrength
+	}
+
+	return 0, 0
+}
+
+// keepWithinBounds ensures human stays within window boundaries with wrap-around for horizontal edges
+func (h *Human) keepWithinBounds() {
+	margin := h.Size * 0.5
+
+	// Horizontal wrap-around: if human goes off left edge, appear on right edge (and vice versa)
+	if h.X < -margin {
+		h.X = h.Bounds.Width + margin // Appear on right side
+	} else if h.X > h.Bounds.Width+margin {
+		h.X = -margin // Appear on left side
+	}
+
+	// Vertical boundaries: still clamp to prevent going off top/bottom
 	if h.Y < 50+margin { // Account for button area
 		h.Y = 50 + margin
 	} else if h.Y > h.Bounds.Height-50-margin {
@@ -304,6 +437,10 @@ func (h *Human) Explode() {
 	h.RightArm.Hide()
 	h.LeftLeg.Hide()
 	h.RightLeg.Hide()
+	h.LeftEye.Hide()
+	h.RightEye.Hide()
+	h.LeftPupil.Hide()
+	h.RightPupil.Hide()
 
 	// Create explosion particles
 	h.ExplosionParticles = make([]*canvas.Circle, 12) // 12 explosion particles
@@ -402,9 +539,58 @@ func (h *Human) Respawn() {
 	h.RightArm.Show()
 	h.LeftLeg.Show()
 	h.RightLeg.Show()
+	h.LeftEye.Show()
+	h.RightEye.Show()
+	h.LeftPupil.Show()
+	h.RightPupil.Show()
 
 	h.UpdatePosition()
 
 	// Clear explosion particles
 	h.ExplosionParticles = nil
+}
+
+// UpdatePointing updates the arms to point at the closest ball
+func (h *Human) UpdatePointing(balls []*Ball) {
+	if !h.IsActive {
+		return
+	}
+
+	// Calculate shoulder positions
+	leftShoulderX := h.X - h.Size*0.15
+	leftShoulderY := h.Y - h.Size*0.1
+	rightShoulderX := h.X + h.Size*0.15
+	rightShoulderY := h.Y - h.Size*0.1
+
+	// Find the closest ball
+	closestBall := h.findClosestBall(balls)
+	if closestBall == nil {
+		// No balls to track, arms should be in default position
+		h.LeftArm.Position1 = fyne.NewPos(leftShoulderX, leftShoulderY)
+		h.LeftArm.Position2 = fyne.NewPos(leftShoulderX-h.Size*0.2, leftShoulderY+h.Size*0.3)
+		h.RightArm.Position1 = fyne.NewPos(rightShoulderX, rightShoulderY)
+		h.RightArm.Position2 = fyne.NewPos(rightShoulderX+h.Size*0.2, rightShoulderY+h.Size*0.3)
+		return
+	}
+
+	// Calculate angle to closest ball from human center
+	dx := closestBall.X - h.X
+	dy := closestBall.Y - h.Y
+	angle := math.Atan2(float64(dy), float64(dx))
+
+	// Calculate arm length for pointing
+	armLength := h.Size * 0.35
+
+	// Both arms point toward the ball
+	// Calculate end positions of arms pointing toward the ball
+	leftArmEndX := leftShoulderX + float32(math.Cos(angle))*armLength
+	leftArmEndY := leftShoulderY + float32(math.Sin(angle))*armLength
+	rightArmEndX := rightShoulderX + float32(math.Cos(angle))*armLength
+	rightArmEndY := rightShoulderY + float32(math.Sin(angle))*armLength
+
+	// Update arm positions to point toward the ball
+	h.LeftArm.Position1 = fyne.NewPos(leftShoulderX, leftShoulderY)
+	h.LeftArm.Position2 = fyne.NewPos(leftArmEndX, leftArmEndY)
+	h.RightArm.Position1 = fyne.NewPos(rightShoulderX, rightShoulderY)
+	h.RightArm.Position2 = fyne.NewPos(rightArmEndX, rightArmEndY)
 }

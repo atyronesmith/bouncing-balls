@@ -10,35 +10,35 @@ import (
 
 // Dragon represents a dragon that chases the biggest ball but never catches it
 type Dragon struct {
-	X, Y            float32   // current position
-	VX, VY          float32   // velocity for bouncing and drifting
-	Size            float32   // size of the dragon
-	Speed           float32   // movement speed
-	MinDistance     float32   // minimum distance to maintain from target
-	ChaseDistance   float32   // distance at which dragon starts chasing
-	Bounds          fyne.Size // movement bounds
-	IsActive        bool      // whether the dragon is active
+	X, Y          float32   // current position
+	VX, VY        float32   // velocity for bouncing and drifting
+	Size          float32   // size of the dragon
+	Speed         float32   // movement speed
+	MinDistance   float32   // minimum distance to maintain from target
+	ChaseDistance float32   // distance at which dragon starts chasing
+	Bounds        fyne.Size // movement bounds
+	IsActive      bool      // whether the dragon is active
 	// Collision and drift state
-	IsDrifting      bool      // whether dragon is currently drifting after collision
-	DriftTimer      int       // frames remaining in drift mode
-	DriftDuration   int       // total frames to drift
+	IsDrifting    bool // whether dragon is currently drifting after collision
+	DriftTimer    int  // frames remaining in drift mode
+	DriftDuration int  // total frames to drift
 	// Spinning animation state
-	IsSpinning      bool      // whether dragon is spinning while resuming chase
-	SpinAngle       float32   // current spin angle
-	SpinCount       int       // number of spins completed
-	SpinTarget      int       // target number of spins (4)
+	IsSpinning bool    // whether dragon is spinning while resuming chase
+	SpinAngle  float32 // current spin angle
+	SpinCount  int     // number of spins completed
+	SpinTarget int     // target number of spins (4)
 	// Visual components
-	Head            *canvas.Circle
-	Body            *canvas.Rectangle
-	Tail            *canvas.Rectangle
-	LeftWing        *canvas.Rectangle
-	RightWing       *canvas.Rectangle
-	LeftEye         *canvas.Circle
-	RightEye        *canvas.Circle
+	Head      *canvas.Circle
+	Body      *canvas.Rectangle
+	Tail      *canvas.Rectangle
+	LeftWing  *canvas.Rectangle
+	RightWing *canvas.Rectangle
+	LeftEye   *canvas.Circle
+	RightEye  *canvas.Circle
 	// Animation state
-	WingFlap        float32 // wing flapping animation
-	FlameParticles  []*canvas.Circle
-	FlameTimer      int
+	WingFlap       float32 // wing flapping animation
+	FlameParticles []*canvas.Circle
+	FlameTimer     int
 }
 
 // NewDragon creates a new dragon figure
@@ -49,20 +49,20 @@ func NewDragon(x, y, size float32) *Dragon {
 		VX:            0,
 		VY:            0,
 		Size:          size,
-		Speed:         3.0,  // Fast enough to chase but not too fast
-		MinDistance:   60.0, // Never gets closer than this to the target
-		ChaseDistance: 200.0, // Starts chasing when within this distance
+		Speed:         3.0,   // Fast enough to chase but not too fast
+		MinDistance:   60.0,  // Never gets closer than this to the target
+		ChaseDistance: 400.0, // Increased from 200.0 - Starts chasing when within this distance
 		Bounds:        fyne.NewSize(800, 600),
 		IsActive:      true,
-		DriftDuration: 120,  // 2 seconds at 60 FPS
-		SpinTarget:    4,    // Spin 4 times when resuming chase
+		DriftDuration: 120, // 2 seconds at 60 FPS
+		SpinTarget:    4,   // Spin 4 times when resuming chase
 	}
 
 	// Dragon colors
-	dragonColor := color.RGBA{R: 150, G: 50, B: 200, A: 255}    // Purple dragon
-	wingColor := color.RGBA{R: 100, G: 30, B: 150, A: 255}     // Darker purple wings
-	eyeColor := color.RGBA{R: 255, G: 255, B: 0, A: 255}       // Yellow eyes
-	flameColor := color.RGBA{R: 255, G: 100, B: 50, A: 255}    // Orange flames
+	dragonColor := color.RGBA{R: 150, G: 50, B: 200, A: 255} // Purple dragon
+	wingColor := color.RGBA{R: 100, G: 30, B: 150, A: 255}   // Darker purple wings
+	eyeColor := color.RGBA{R: 255, G: 255, B: 0, A: 255}     // Yellow eyes
+	flameColor := color.RGBA{R: 255, G: 100, B: 50, A: 255}  // Orange flames
 
 	// Head (circle)
 	dragon.Head = &canvas.Circle{
@@ -269,7 +269,7 @@ func (d *Dragon) updateSpinning() {
 
 	// Check if completed a full rotation
 	if d.SpinAngle >= 2*math.Pi {
-		d.SpinAngle -= 2*math.Pi
+		d.SpinAngle -= 2 * math.Pi
 		d.SpinCount++
 
 		// Check if completed target number of spins
@@ -436,7 +436,7 @@ func (d *Dragon) UpdatePosition() {
 		if flame != nil {
 			// Base flame position
 			baseFlameX := -d.Size*0.5 - float32(i)*8
-			baseFlameY := float32(math.Sin(float64(d.FlameTimer)*0.1+float64(i)*0.5))*3
+			baseFlameY := float32(math.Sin(float64(d.FlameTimer)*0.1+float64(i)*0.5)) * 3
 
 			// Apply spin rotation to flame position
 			flameOffsetX, flameOffsetY := applySpinRotation(baseFlameX, baseFlameY)
@@ -460,12 +460,12 @@ func (d *Dragon) UpdatePosition() {
 // GetVisualComponents returns all visual components for adding to container
 func (d *Dragon) GetVisualComponents() []fyne.CanvasObject {
 	components := []fyne.CanvasObject{
-		d.Tail,      // Draw tail first (behind)
-		d.LeftWing,  // Wings behind body
+		d.Tail,     // Draw tail first (behind)
+		d.LeftWing, // Wings behind body
 		d.RightWing,
-		d.Body,      // Body in middle
-		d.Head,      // Head on top
-		d.LeftEye,   // Eyes on top of head
+		d.Body,    // Body in middle
+		d.Head,    // Head on top
+		d.LeftEye, // Eyes on top of head
 		d.RightEye,
 	}
 

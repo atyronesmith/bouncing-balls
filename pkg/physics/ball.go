@@ -16,9 +16,9 @@ type Ball struct {
 	Radius     float32 // ball radius
 	Circle     *canvas.Circle
 	Text       *canvas.Text // AI LLM name label
-	LLMName    string        // AI LLM name
-	Bounds     fyne.Size     // animation bounds
-	IsAnimated bool          // whether animation is running
+	LLMName    string       // AI LLM name
+	Bounds     fyne.Size    // animation bounds
+	IsAnimated bool         // whether animation is running
 	// Particle trail system
 	Trail      []*canvas.Circle
 	TrailIndex int
@@ -82,7 +82,7 @@ func NewBall() *Ball {
 	ball.Circle = &canvas.Circle{
 		FillColor:   color.RGBA{R: 100, G: 150, B: 255, A: 255}, // Light blue
 		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 0},         // No stroke
-		StrokeWidth: 0,                                           // No stroke width
+		StrokeWidth: 0,                                          // No stroke width
 	}
 
 	// Create the text label for the AI LLM name
@@ -333,7 +333,7 @@ func NewCustomBall(x, y, vx, vy, radius float32, fillColor, strokeColor color.RG
 	ball.Circle = &canvas.Circle{
 		FillColor:   fillColor,
 		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 0}, // No stroke
-		StrokeWidth: 0,                                   // No stroke width
+		StrokeWidth: 0,                                  // No stroke width
 	}
 
 	// Create the text label for the AI LLM name

@@ -8,34 +8,138 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
-	"github.com/atyronesmith/bouncing-balls/pkg/effects"
 	"github.com/atyronesmith/bouncing-balls/pkg/physics"
 )
 
 // App represents the main application
 type App struct {
-	fyneApp fyne.App
-	window  fyne.Window
-	balls   []*physics.Ball
-	human   *physics.Human
-	dragon  *physics.Dragon
+	fyneApp         fyne.App
+	window          fyne.Window
+	balls           []*physics.Ball
+	human           *physics.Human
+	dragon          *physics.Dragon
+	currentBounds   fyne.Size
+	animationTicker *time.Ticker
+	content         *fyne.Container // Main content container for dynamic elements
 }
 
 // NewApp creates a new application instance
 func NewApp() *App {
 	return &App{
-		fyneApp: app.New(),
+		fyneApp:       app.New(),
+		currentBounds: fyne.NewSize(800, 600),
 	}
+}
+
+// updateBounds updates the bounds for all physics objects
+func (a *App) updateBounds(newSize fyne.Size) {
+	a.currentBounds = newSize
+
+	// Update bounds for all balls
+	for _, ball := range a.balls {
+		ball.Bounds = newSize
+	}
+
+	// Update bounds for human
+	if a.human != nil {
+		a.human.Bounds = newSize
+	}
+
+	// Update bounds for dragon
+	if a.dragon != nil {
+		a.dragon.Bounds = newSize
+	}
+}
+
+// startAnimation starts the animation loop - simplified version
+func (a *App) startAnimation() {
+	// Start the animation automatically for all balls
+	for _, ball := range a.balls {
+		ball.IsAnimated = true
+	}
+
+	// Simple animation timer - updates all balls 60 times per second
+	a.animationTicker = time.NewTicker(time.Millisecond * 16) // ~60 FPS
+	go func() {
+		defer a.animationTicker.Stop()
+		for {
+			select {
+			case <-a.animationTicker.C:
+				// Update all ball positions (wall bouncing)
+				for _, ball := range a.balls {
+					ball.Update()
+				}
+
+				// Check for ball-to-ball collisions
+				for i := 0; i < len(a.balls); i++ {
+					for j := i + 1; j < len(a.balls); j++ {
+						if a.balls[i].CheckCollision(a.balls[j]) {
+							a.balls[i].HandleCollision(a.balls[j])
+						}
+					}
+				}
+
+				// Update human
+				if a.human != nil {
+					if a.human.IsActive {
+						a.human.Update(a.balls)
+
+						// Check ball-human collisions
+						if a.human.CheckCollisionWithBalls(a.balls) {
+							// Store previous explosion state
+							wasExploding := a.human.IsExploding
+							a.human.Explode()
+
+							// If explosion just started, add particles to UI
+							if !wasExploding && a.human.IsExploding {
+								for _, particle := range a.human.ExplosionParticles {
+									if particle != nil {
+										a.content.Add(particle)
+									}
+								}
+							}
+						}
+					}
+
+					// Always update explosion state (handles respawn timer and animation)
+					if a.human.IsExploding {
+						// Store explosion particles before update (for cleanup)
+						particlesBeforeUpdate := a.human.ExplosionParticles
+						wasExploding := a.human.IsExploding
+
+						a.human.UpdateExplosion()
+
+						// If explosion just ended (respawn happened), clean up particles from UI
+						if wasExploding && !a.human.IsExploding {
+							// Remove explosion particles from UI
+							for _, particle := range particlesBeforeUpdate {
+								if particle != nil {
+									a.content.Remove(particle)
+								}
+							}
+						}
+					}
+				}
+
+				// Update dragon if active
+				if a.dragon != nil && a.dragon.IsActive {
+					a.dragon.Update(a.balls)
+					a.dragon.UpdatePosition()
+				}
+			}
+		}
+	}()
 }
 
 // Run starts the application
 func (a *App) Run() {
 	a.fyneApp.SetIcon(nil)
 
-	// Create a larger window for bouncing animation
-	a.window = a.fyneApp.NewWindow("Dragon Chases Balls + Human Keyboard Control - macOS")
-	a.window.Resize(fyne.NewSize(800, 600))
+	// Create a fixed size window
+	a.window = a.fyneApp.NewWindow("Bouncing Balls - Fixed Size (800x600)")
+	a.window.Resize(a.currentBounds)
 	a.window.CenterOnScreen()
+	a.window.SetFixedSize(true) // Make window non-resizable
 
 	// Create three bouncing balls with different properties
 	ball1 := physics.NewCustomBall(
@@ -65,159 +169,73 @@ func (a *App) Run() {
 	// Store all balls in a slice for easier management
 	a.balls = []*physics.Ball{ball1, ball2, ball3}
 
-	// Create the human figure (same size as largest ball - ball3 has radius 35)
-	a.human = physics.NewHuman(400, 300, 35) // Center of screen, size of largest ball
+	// Create the human figure
+	a.human = physics.NewHuman(400, 300, 35)
 
-	// Create the dragon (slightly larger than human, positioned differently)
-	a.dragon = physics.NewDragon(200, 200, 40) // Upper left area, slightly larger than human
+	// Create the dragon
+	a.dragon = physics.NewDragon(200, 200, 40)
 
-	// Lightning system
-	var activeLightning []*effects.Lightning
-	frameCount := 0
+	// Update bounds for all objects
+	a.updateBounds(a.currentBounds)
 
 	// Create instruction label
-	label := widget.NewLabel("⚡🌟🐉⌨️ Lightning + Trails + Dragon Chasing + Human Keyboard Control (Arrow Keys)!")
+	label := widget.NewLabel("⚡ Bouncing Balls - Fixed Size Window (Non-Resizable)")
 	label.Alignment = fyne.TextAlignCenter
 
 	// Create UI controls
 	controls := a.createControls()
 
-	// Create the main container with trails, circles, and human
-	content := container.NewWithoutLayout()
+	// Create the main container
+	a.content = container.NewWithoutLayout()
 
 	// Add ball trails to container
 	for _, ball := range a.balls {
 		for _, trail := range ball.Trail {
-			content.Add(trail)
+			a.content.Add(trail)
 		}
 	}
 
 	// Add balls
-	content.Add(ball1.Circle) // Blue circle
-	content.Add(ball2.Circle) // Red circle
-	content.Add(ball3.Circle) // Green circle
+	a.content.Add(ball1.Circle)
+	a.content.Add(ball2.Circle)
+	a.content.Add(ball3.Circle)
 
 	// Add ball text labels
-	content.Add(ball1.Text) // Blue ball text
-	content.Add(ball2.Text) // Red ball text
-	content.Add(ball3.Text) // Green ball text
+	a.content.Add(ball1.Text)
+	a.content.Add(ball2.Text)
+	a.content.Add(ball3.Text)
 
 	// Add human figure components
-	content.Add(a.human.Head)
-	content.Add(a.human.Body)
-	content.Add(a.human.LeftArm)
-	content.Add(a.human.RightArm)
-	content.Add(a.human.LeftLeg)
-	content.Add(a.human.RightLeg)
+	a.content.Add(a.human.Head)
+	a.content.Add(a.human.Body)
+	a.content.Add(a.human.LeftArm)
+	a.content.Add(a.human.RightArm)
+	a.content.Add(a.human.LeftLeg)
+	a.content.Add(a.human.RightLeg)
+	// Add eyes (should be on top of head)
+	a.content.Add(a.human.LeftEye)
+	a.content.Add(a.human.RightEye)
+	a.content.Add(a.human.LeftPupil)
+	a.content.Add(a.human.RightPupil)
 
 	// Add dragon figure components
 	dragonComponents := a.dragon.GetVisualComponents()
 	for _, component := range dragonComponents {
-		content.Add(component)
+		a.content.Add(component)
 	}
 
 	// Create the full layout
 	fullContent := container.NewVBox(
 		label,
-		content,
+		a.content,
 		controls,
 	)
 
 	// Set the content
 	a.window.SetContent(fullContent)
 
-		// Set up keyboard event handling for continuous key presses
-	// We'll use a map to track key press timestamps for auto-release
-	keyTimestamps := make(map[fyne.KeyName]int)
-	keyTimeout := 3 // frames before auto-release (at 60fps = ~50ms)
-
-	a.window.Canvas().SetOnTypedKey(func(key *fyne.KeyEvent) {
-		switch key.Name {
-		case fyne.KeyUp, fyne.KeyDown, fyne.KeyLeft, fyne.KeyRight:
-			keyTimestamps[key.Name] = frameCount
-		}
-	})
-
-	// Update human key states based on recent key presses
-	updateKeyStates := func() {
-		a.human.KeyUp = (frameCount - keyTimestamps[fyne.KeyUp]) < keyTimeout
-		a.human.KeyDown = (frameCount - keyTimestamps[fyne.KeyDown]) < keyTimeout
-		a.human.KeyLeft = (frameCount - keyTimestamps[fyne.KeyLeft]) < keyTimeout
-		a.human.KeyRight = (frameCount - keyTimestamps[fyne.KeyRight]) < keyTimeout
-	}
-
-	// Start the animation automatically for all balls
-	for _, ball := range a.balls {
-		ball.IsAnimated = true
-	}
-
-	// Animation timer - updates all balls and human 60 times per second for smooth animation
-	go func() {
-		ticker := time.NewTicker(time.Millisecond * 16) // ~60 FPS
-		defer ticker.Stop()
-		for range ticker.C {
-			frameCount++
-
-			// Update keyboard states
-			updateKeyStates()
-
-			// Update all ball positions (wall bouncing)
-			for _, ball := range a.balls {
-				ball.Update()
-			}
-
-			// Check for ball-to-ball collisions and create lightning
-			for i := 0; i < len(a.balls); i++ {
-				for j := i + 1; j < len(a.balls); j++ {
-					if a.balls[i].CheckCollision(a.balls[j]) {
-						a.balls[i].HandleCollision(a.balls[j])
-
-						// Create lightning effect on collision
-						lightning := effects.NewLightning(a.balls[i], a.balls[j])
-						activeLightning = append(activeLightning, lightning)
-
-						// Add lightning lines to visual container
-						for _, line := range lightning.Lines {
-							content.Add(line)
-						}
-					}
-				}
-			}
-
-			// Update lightning effects
-			var stillActiveLightning []*effects.Lightning
-			for _, lightning := range activeLightning {
-				if lightning.Update() {
-					stillActiveLightning = append(stillActiveLightning, lightning)
-				}
-			}
-			activeLightning = stillActiveLightning
-
-			// Update human behavior
-			if a.human.IsExploding {
-				a.human.UpdateExplosion()
-			} else {
-				// Update human behavior (includes keyboard control and AI avoidance)
-				a.human.Update(a.balls)
-
-				// Check for collisions with balls
-				if a.human.CheckCollisionWithBalls(a.balls) {
-					a.human.Explode()
-
-					// Add explosion particles to the visual container
-					for _, particle := range a.human.ExplosionParticles {
-						if particle != nil {
-							content.Add(particle)
-						}
-					}
-				}
-			}
-
-			// Update dragon behavior (handles collision, drifting, spinning, and chasing)
-			a.dragon.Update(a.balls)
-			a.dragon.UpdatePosition()
-		}
-	}()
+	// Start the animation
+	a.startAnimation()
 
 	// Show and run the application
 	a.window.ShowAndRun()
@@ -244,66 +262,6 @@ func (a *App) createControls() *fyne.Container {
 		}
 	})
 
-	speedUpButton := widget.NewButton("⚡ Speed Up", func() {
-		for _, ball := range a.balls {
-			ball.VX *= 1.2
-			ball.VY *= 1.2
-		}
-	})
-
-	slowDownButton := widget.NewButton("🐌 Slow Down", func() {
-		for _, ball := range a.balls {
-			ball.VX *= 0.8
-			ball.VY *= 0.8
-		}
-	})
-
-	massInfoButton := widget.NewButton("⚖️ Show Masses", func() {
-		// Display mass information (for demonstration)
-		// In a real app, you might use a dialog or status bar
-		println("Ball Masses:")
-		println("Blue ball (radius 30):", a.balls[0].GetMass())
-		println("Red ball (radius 25):", a.balls[1].GetMass())
-		println("Green ball (radius 35):", a.balls[2].GetMass())
-	})
-
-	humanButton := widget.NewButton("🏃 Toggle Human", func() {
-		if a.human.IsExploding {
-			return // Don't allow toggle during explosion
-		}
-		a.human.IsActive = !a.human.IsActive
-		if !a.human.IsActive {
-			// Hide human components when inactive
-			a.human.Head.Hide()
-			a.human.Body.Hide()
-			a.human.LeftArm.Hide()
-			a.human.RightArm.Hide()
-			a.human.LeftLeg.Hide()
-			a.human.RightLeg.Hide()
-		} else {
-			// Show human components when active
-			a.human.Head.Show()
-			a.human.Body.Show()
-			a.human.LeftArm.Show()
-			a.human.RightArm.Show()
-			a.human.LeftLeg.Show()
-			a.human.RightLeg.Show()
-		}
-	})
-
-	deathCountButton := widget.NewButton("💀 Death Count", func() {
-		println("Human Deaths:", a.human.Deaths)
-	})
-
-	dragonButton := widget.NewButton("🐉 Toggle Dragon", func() {
-		a.dragon.IsActive = !a.dragon.IsActive
-		if !a.dragon.IsActive {
-			a.dragon.Hide()
-		} else {
-			a.dragon.Show()
-		}
-	})
-
 	resetButton := widget.NewButton("🔄 Reset All", func() {
 		a.resetAll()
 	})
@@ -312,50 +270,45 @@ func (a *App) createControls() *fyne.Container {
 		a.fyneApp.Quit()
 	})
 
-	// Create button container with more buttons
+	// Create a horizontal container for buttons
 	return container.NewHBox(
 		startButton,
 		stopButton,
 		colorButton,
-		speedUpButton,
-		slowDownButton,
-		massInfoButton,
-		humanButton,
-		deathCountButton,
-		dragonButton,
 		resetButton,
 		quitButton,
 	)
 }
 
-// resetAll resets all balls and human to initial state
+// resetAll resets all objects to their initial state
 func (a *App) resetAll() {
-	// Reset ball1
-	a.balls[0].X, a.balls[0].Y = 100, 100
-	a.balls[0].VX, a.balls[0].VY = 3.5, 2.8
-	a.balls[0].Circle.Move(fyne.NewPos(a.balls[0].X-a.balls[0].Radius, a.balls[0].Y-a.balls[0].Radius))
+	// Reset ball positions and velocities
+	a.balls[0].X = 100
+	a.balls[0].Y = 100
+	a.balls[0].VX = 3.5
+	a.balls[0].VY = 2.8
 
-	// Reset ball2
-	a.balls[1].X, a.balls[1].Y = 300, 200
-	a.balls[1].VX, a.balls[1].VY = -2.8, 4.2
-	a.balls[1].Circle.Move(fyne.NewPos(a.balls[1].X-a.balls[1].Radius, a.balls[1].Y-a.balls[1].Radius))
+	a.balls[1].X = 300
+	a.balls[1].Y = 200
+	a.balls[1].VX = -2.8
+	a.balls[1].VY = 4.2
 
-	// Reset ball3
-	a.balls[2].X, a.balls[2].Y = 500, 150
-	a.balls[2].VX, a.balls[2].VY = -4.1, -3.3
-	a.balls[2].Circle.Move(fyne.NewPos(a.balls[2].X-a.balls[2].Radius, a.balls[2].Y-a.balls[2].Radius))
+	a.balls[2].X = 500
+	a.balls[2].Y = 150
+	a.balls[2].VX = -4.1
+	a.balls[2].VY = -3.3
+
+	// Update ball visual positions
+	for _, ball := range a.balls {
+		ball.Circle.Move(fyne.NewPos(ball.X-ball.Radius, ball.Y-ball.Radius))
+	}
 
 	// Reset human
-	a.human.X, a.human.Y = 400, 300
+	a.human.X = 400
+	a.human.Y = 300
 	a.human.IsExploding = false
 	a.human.IsActive = true
 	a.human.RespawnTimer = 0
-	a.human.Deaths = 0
-	a.human.KeyUp = false
-	a.human.KeyDown = false
-	a.human.KeyLeft = false
-	a.human.KeyRight = false
-
 	// Show human components
 	a.human.Head.Show()
 	a.human.Body.Show()
@@ -363,27 +316,18 @@ func (a *App) resetAll() {
 	a.human.RightArm.Show()
 	a.human.LeftLeg.Show()
 	a.human.RightLeg.Show()
+	a.human.LeftEye.Show()
+	a.human.RightEye.Show()
+	a.human.LeftPupil.Show()
+	a.human.RightPupil.Show()
 	a.human.UpdatePosition()
 
-	// Clear any explosion particles
-	if a.human.ExplosionParticles != nil {
-		for _, particle := range a.human.ExplosionParticles {
-			if particle != nil {
-				particle.Hide()
-			}
-		}
-		a.human.ExplosionParticles = nil
-	}
-
 	// Reset dragon
-	a.dragon.X, a.dragon.Y = 200, 200
-	a.dragon.VX, a.dragon.VY = 0, 0
+	a.dragon.X = 200
+	a.dragon.Y = 200
+	a.dragon.VX = 0
+	a.dragon.VY = 0
 	a.dragon.IsActive = true
-	a.dragon.IsDrifting = false
-	a.dragon.DriftTimer = 0
-	a.dragon.IsSpinning = false
-	a.dragon.SpinAngle = 0
-	a.dragon.SpinCount = 0
 	a.dragon.Show()
 	a.dragon.UpdatePosition()
 }
