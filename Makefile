@@ -1,9 +1,10 @@
-# Bouncing Balls - Makefile
+# Bouncing Balls Game - Makefile
+# Interactive physics simulation with bouncing balls, human character, and shooting mechanics
 # Go project build automation
 
 # Project settings
 PROJECT_NAME := bouncing-balls
-MODULE_NAME := github.com/asmith/bouncing-balls
+MODULE_NAME := github.com/atyronesmith/bouncing-balls
 CMD_DIR := cmd/bouncing-balls
 PKG_DIR := pkg
 BUILD_DIR := build
@@ -35,7 +36,9 @@ all: clean fmt vet build
 
 # Help target
 help: ## Show this help message
-	@echo "$(CYAN)Bouncing Balls - Available Commands:$(NC)"
+	@echo "$(CYAN)Bouncing Balls Game - Available Commands:$(NC)"
+	@echo "$(YELLOW)Interactive physics simulation with bouncing balls, human character,$(NC)"
+	@echo "$(YELLOW)bullet shooting, explosions, and particle effects$(NC)"
 	@echo ""
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
@@ -169,9 +172,11 @@ dev-setup: deps ## Set up development environment
 
 # Show project info
 info: ## Show project information
-	@echo "$(CYAN)Project Information:$(NC)"
+	@echo "$(CYAN)Bouncing Balls Game - Project Information:$(NC)"
 	@echo "  Name: $(PROJECT_NAME)"
 	@echo "  Module: $(MODULE_NAME)"
+	@echo "  Description: Interactive physics simulation with bouncing balls"
+	@echo "  Features: Human AI, bullet shooting, explosions, particle effects"
 	@echo "  Go Version: $(shell go version)"
 	@echo "  GOOS: $(GOOS)"
 	@echo "  GOARCH: $(GOARCH)"

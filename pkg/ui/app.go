@@ -74,7 +74,27 @@ func (a *App) startAnimation() {
 				for i := 0; i < len(a.balls); i++ {
 					for j := i + 1; j < len(a.balls); j++ {
 						if a.balls[i].CheckCollision(a.balls[j]) {
+							// Store explosion state before collision
+							wasExploding1 := a.balls[i].IsExploding
+							wasExploding2 := a.balls[j].IsExploding
+
 							a.balls[i].HandleCollision(a.balls[j])
+
+							// Add explosion particles to UI if explosion just started
+							if !wasExploding1 && a.balls[i].IsExploding {
+								for _, particle := range a.balls[i].GetExplosionParticles() {
+									if particle != nil {
+										a.content.Add(particle)
+									}
+								}
+							}
+							if !wasExploding2 && a.balls[j].IsExploding {
+								for _, particle := range a.balls[j].GetExplosionParticles() {
+									if particle != nil {
+										a.content.Add(particle)
+									}
+								}
+							}
 						}
 					}
 				}
@@ -82,7 +102,25 @@ func (a *App) startAnimation() {
 				// Update human
 				if a.human != nil {
 					if a.human.IsActive {
+						// Store bullets before update for UI management
+						bulletsBeforeUpdate := a.human.GetBulletVisuals()
+
 						a.human.Update(a.balls)
+
+						// Add new bullets to UI
+						bulletsAfterUpdate := a.human.GetBulletVisuals()
+						for _, bullet := range bulletsAfterUpdate {
+							found := false
+							for _, oldBullet := range bulletsBeforeUpdate {
+								if bullet == oldBullet {
+									found = true
+									break
+								}
+							}
+							if !found {
+								a.content.Add(bullet)
+							}
+						}
 
 						// Check ball-human collisions
 						if a.human.CheckCollisionWithBalls(a.balls) {

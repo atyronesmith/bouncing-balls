@@ -8,6 +8,14 @@ import (
 	"fyne.io/fyne/v2/canvas"
 )
 
+// Bullet represents a bullet fired by the human
+type Bullet struct {
+	X, Y     float32 // current position
+	VX, VY   float32 // velocity
+	Visual   *canvas.Circle
+	IsActive bool
+}
+
 // Human represents a human that avoids the balls
 type Human struct {
 	X, Y         float32   // current position
@@ -37,17 +45,24 @@ type Human struct {
 	RightPupil *canvas.Circle // Right pupil (tracks balls)
 	// Explosion particles
 	ExplosionParticles []*canvas.Circle
+	// Bullet system
+	Bullets       []*Bullet
+	ShootTimer    int // frames until next shot
+	ShootCooldown int // frames between shots
 }
 
 // NewHuman creates a new human figure
 func NewHuman(x, y, size float32) *Human {
 	human := &Human{
-		X:        x,
-		Y:        y,
-		Size:     size,
-		Speed:    4.5, // Increased from 2.0 to 4.5 for much faster movement
-		Bounds:   fyne.NewSize(800, 600),
-		IsActive: true,
+		X:             x,
+		Y:             y,
+		Size:          size,
+		Speed:         4.5, // Increased from 2.0 to 4.5 for much faster movement
+		Bounds:        fyne.NewSize(800, 600),
+		IsActive:      true,
+		Bullets:       make([]*Bullet, 0),
+		ShootTimer:    0,
+		ShootCooldown: 15, // Shoot every 15 frames (4 times per second at 60 FPS)
 	}
 
 	// Create human figure components
@@ -160,18 +175,6 @@ func (h *Human) UpdatePosition() {
 	// Body position (center)
 	h.Body.Move(fyne.NewPos(h.X-h.Size*0.15, h.Y-h.Size*0.2))
 
-	// Arms positions (lines from shoulders)
-	leftShoulderX := h.X - h.Size*0.15
-	leftShoulderY := h.Y - h.Size*0.1
-	rightShoulderX := h.X + h.Size*0.15
-	rightShoulderY := h.Y - h.Size*0.1
-
-	// Default arm positions (will be overridden by pointing logic)
-	h.LeftArm.Position1 = fyne.NewPos(leftShoulderX, leftShoulderY)
-	h.LeftArm.Position2 = fyne.NewPos(leftShoulderX-h.Size*0.2, leftShoulderY+h.Size*0.3)
-	h.RightArm.Position1 = fyne.NewPos(rightShoulderX, rightShoulderY)
-	h.RightArm.Position2 = fyne.NewPos(rightShoulderX+h.Size*0.2, rightShoulderY+h.Size*0.3)
-
 	// Legs positions (bottom of body)
 	h.LeftLeg.Move(fyne.NewPos(h.X-h.Size*0.12, h.Y+h.Size*0.1))
 	h.RightLeg.Move(fyne.NewPos(h.X+h.Size*0.06, h.Y+h.Size*0.1))
@@ -272,6 +275,15 @@ func (h *Human) Update(balls []*Ball) {
 
 	// Update arms to point at closest ball
 	h.UpdatePointing(balls)
+
+	// Update shooting system
+	h.UpdateShooting(balls)
+
+	// Update bullet positions
+	h.UpdateBullets()
+
+	// Check bullet collisions with balls
+	h.CheckBulletCollisions(balls)
 }
 
 // calculateAvoidance calculates AI avoidance movement (extracted from original AvoidBalls method)
@@ -486,10 +498,11 @@ func (h *Human) UpdateExplosion() {
 				particle.Move(fyne.NewPos(newX, newY))
 
 				// Fade particles
-				alpha := 255 - uint8(explosionFrame*4)
-				if alpha > 255 {
-					alpha = 0
+				alphaInt := 255 - int(explosionFrame*4)
+				if alphaInt < 0 {
+					alphaInt = 0
 				}
+				alpha := uint8(alphaInt)
 				particle.FillColor = color.RGBA{
 					R: particle.FillColor.(color.RGBA).R,
 					G: particle.FillColor.(color.RGBA).G,
@@ -556,7 +569,7 @@ func (h *Human) UpdatePointing(balls []*Ball) {
 		return
 	}
 
-	// Calculate shoulder positions
+	// Calculate shoulder positions based on current human position
 	leftShoulderX := h.X - h.Size*0.15
 	leftShoulderY := h.Y - h.Size*0.1
 	rightShoulderX := h.X + h.Size*0.15
@@ -570,6 +583,10 @@ func (h *Human) UpdatePointing(balls []*Ball) {
 		h.LeftArm.Position2 = fyne.NewPos(leftShoulderX-h.Size*0.2, leftShoulderY+h.Size*0.3)
 		h.RightArm.Position1 = fyne.NewPos(rightShoulderX, rightShoulderY)
 		h.RightArm.Position2 = fyne.NewPos(rightShoulderX+h.Size*0.2, rightShoulderY+h.Size*0.3)
+
+		// Refresh the arms to update their visual appearance
+		h.LeftArm.Refresh()
+		h.RightArm.Refresh()
 		return
 	}
 
@@ -593,4 +610,159 @@ func (h *Human) UpdatePointing(balls []*Ball) {
 	h.LeftArm.Position2 = fyne.NewPos(leftArmEndX, leftArmEndY)
 	h.RightArm.Position1 = fyne.NewPos(rightShoulderX, rightShoulderY)
 	h.RightArm.Position2 = fyne.NewPos(rightArmEndX, rightArmEndY)
+
+	// Refresh the arms to update their visual appearance
+	h.LeftArm.Refresh()
+	h.RightArm.Refresh()
+}
+
+// NewBullet creates a new bullet at the specified position with velocity toward target
+func NewBullet(startX, startY, targetX, targetY float32) *Bullet {
+	// Calculate direction vector to target
+	dx := targetX - startX
+	dy := targetY - startY
+	distance := float32(math.Sqrt(float64(dx*dx + dy*dy)))
+
+	// Normalize direction and set bullet speed
+	bulletSpeed := float32(8.0) // Fast bullet speed
+	vx := (dx / distance) * bulletSpeed
+	vy := (dy / distance) * bulletSpeed
+
+	bullet := &Bullet{
+		X:        startX,
+		Y:        startY,
+		VX:       vx,
+		VY:       vy,
+		IsActive: true,
+	}
+
+	// Create visual representation - small yellow circle
+	bullet.Visual = &canvas.Circle{
+		FillColor:   color.RGBA{R: 255, G: 255, B: 0, A: 255}, // Yellow bullet
+		StrokeColor: color.RGBA{R: 255, G: 200, B: 0, A: 255},
+		StrokeWidth: 1.0,
+	}
+	bullet.Visual.Resize(fyne.NewSize(4, 4)) // Small bullet
+	bullet.Visual.Move(fyne.NewPos(startX-2, startY-2))
+
+	return bullet
+}
+
+// UpdateBullets updates all bullet positions and removes inactive ones
+func (h *Human) UpdateBullets() {
+	// Update existing bullets
+	for i := len(h.Bullets) - 1; i >= 0; i-- {
+		bullet := h.Bullets[i]
+		if !bullet.IsActive {
+			continue
+		}
+
+		// Update bullet position
+		bullet.X += bullet.VX
+		bullet.Y += bullet.VY
+		bullet.Visual.Move(fyne.NewPos(bullet.X-2, bullet.Y-2))
+
+		// Remove bullets that go off screen
+		if bullet.X < 0 || bullet.X > h.Bounds.Width || bullet.Y < 0 || bullet.Y > h.Bounds.Height {
+			bullet.IsActive = false
+			bullet.Visual.Hide()
+			// Remove from slice
+			h.Bullets = append(h.Bullets[:i], h.Bullets[i+1:]...)
+		}
+	}
+}
+
+// ShootAtTarget creates bullets from both arms toward the target
+func (h *Human) ShootAtTarget(targetX, targetY float32) {
+	if !h.IsActive || h.IsExploding {
+		return
+	}
+
+	// Get arm endpoints (where bullets spawn from)
+	leftArmEndX := h.LeftArm.Position2.X
+	leftArmEndY := h.LeftArm.Position2.Y
+	rightArmEndX := h.RightArm.Position2.X
+	rightArmEndY := h.RightArm.Position2.Y
+
+	// Create bullets from both arms
+	leftBullet := NewBullet(leftArmEndX, leftArmEndY, targetX, targetY)
+	rightBullet := NewBullet(rightArmEndX, rightArmEndY, targetX, targetY)
+
+	h.Bullets = append(h.Bullets, leftBullet, rightBullet)
+}
+
+// UpdateShooting handles the shooting timer and creates bullets when ready
+func (h *Human) UpdateShooting(balls []*Ball) {
+	if !h.IsActive || h.IsExploding {
+		return
+	}
+
+	// Decrement shoot timer
+	if h.ShootTimer > 0 {
+		h.ShootTimer--
+		return
+	}
+
+	// Find closest ball to shoot at
+	closestBall := h.findClosestBall(balls)
+	if closestBall == nil {
+		return
+	}
+
+	// Shoot at the closest ball
+	h.ShootAtTarget(closestBall.X, closestBall.Y)
+
+	// Reset shoot timer
+	h.ShootTimer = h.ShootCooldown
+}
+
+// CheckBulletCollisions checks if any bullets hit any balls and handles the collision
+func (h *Human) CheckBulletCollisions(balls []*Ball) {
+	for i := len(h.Bullets) - 1; i >= 0; i-- {
+		bullet := h.Bullets[i]
+		if !bullet.IsActive {
+			continue
+		}
+
+		for _, ball := range balls {
+			if !ball.IsAnimated {
+				continue
+			}
+
+			// Check collision between bullet and ball
+			dx := bullet.X - ball.X
+			dy := bullet.Y - ball.Y
+			distance := float32(math.Sqrt(float64(dx*dx + dy*dy)))
+
+			if distance < ball.Radius+2 { // bullet radius is 2
+				// Bullet hit ball!
+				bullet.IsActive = false
+				bullet.Visual.Hide()
+
+				// Make ball grow slightly
+				growthAmount := float32(0.8) // Small growth per hit
+				ball.Radius += growthAmount
+				ball.OriginalRadius += growthAmount
+
+				// Update ball visual size
+				ball.Circle.Resize(fyne.NewSize(ball.Radius*2, ball.Radius*2))
+				ball.updateTextSize() // Adjust text size for new ball size
+
+				// Remove bullet from slice
+				h.Bullets = append(h.Bullets[:i], h.Bullets[i+1:]...)
+				break // Bullet can only hit one ball
+			}
+		}
+	}
+}
+
+// GetBulletVisuals returns all bullet visual objects for UI management
+func (h *Human) GetBulletVisuals() []*canvas.Circle {
+	visuals := make([]*canvas.Circle, 0, len(h.Bullets))
+	for _, bullet := range h.Bullets {
+		if bullet.IsActive {
+			visuals = append(visuals, bullet.Visual)
+		}
+	}
+	return visuals
 }
