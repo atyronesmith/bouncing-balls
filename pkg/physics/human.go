@@ -168,22 +168,24 @@ func NewHuman(x, y, size float32) *Human {
 	// Create firing circle system
 	human.FiringRadius = size * 1.5 // Circle radius around human
 
-	// Transparent firing circle
+	// Transparent firing circle with only edge visible
 	human.FiringCircle = &canvas.Circle{
-		FillColor:   color.RGBA{R: 100, G: 200, B: 255, A: 60}, // Light blue, very transparent
-		StrokeColor: color.RGBA{R: 0, G: 150, B: 255, A: 120},   // Blue outline, semi-transparent
+		FillColor:   color.RGBA{R: 0, G: 0, B: 0, A: 0},           // Completely transparent interior
+		StrokeColor: color.RGBA{R: 0, G: 150, B: 255, A: 13},      // 95% transparent blue edge (255 * 0.05 = ~13)
 		StrokeWidth: 2.0,
 	}
 	human.FiringCircle.Resize(fyne.NewSize(human.FiringRadius*2, human.FiringRadius*2))
 	human.FiringCircle.Move(fyne.NewPos(x-human.FiringRadius, y-human.FiringRadius))
 
-	// Firing effect (shows briefly when shooting)
+	// Firing effect (highlights a portion of the circle edge when shooting)
 	human.FiringEffect = &canvas.Circle{
-		FillColor:   color.RGBA{R: 255, G: 255, B: 100, A: 200}, // Bright yellow flash
-		StrokeColor: color.RGBA{R: 255, G: 200, B: 0, A: 255},   // Orange outline
-		StrokeWidth: 4.0,
+		FillColor:   color.RGBA{R: 0, G: 0, B: 0, A: 0},           // Transparent interior
+		StrokeColor: color.RGBA{R: 255, G: 200, B: 0, A: 255},     // Bright orange edge highlight
+		StrokeWidth: 6.0,                                          // Thicker than normal circle
 	}
-	human.FiringEffect.Resize(fyne.NewSize(size*0.3, size*0.3)) // Small effect
+	// Make the effect smaller to show just a segment
+	effectRadius := human.FiringRadius * 0.3 // Match the radius calculation in updateFiringCircle
+	human.FiringEffect.Resize(fyne.NewSize(effectRadius*2, effectRadius*2))
 	human.FiringEffect.Hide() // Initially hidden
 
 	// Initialize firing system
@@ -1020,12 +1022,13 @@ func (h *Human) updateFiringCircle() {
 	if h.FiringEffectTimer > 0 {
 		h.FiringEffectTimer--
 
-		// Position firing effect at the firing angle on the circle edge
-		effectX := h.X + float32(math.Cos(float64(h.FiringAngle))) * h.FiringRadius
-		effectY := h.Y + float32(math.Sin(float64(h.FiringAngle))) * h.FiringRadius
+		// Position firing effect to appear as a highlighted segment on the main circle edge
+		effectRadius := h.FiringRadius * 0.3 // Radius of the effect circle
+		// Position effect center on the main circle's edge at the firing angle
+		effectCenterX := h.X + float32(math.Cos(float64(h.FiringAngle))) * h.FiringRadius
+		effectCenterY := h.Y + float32(math.Sin(float64(h.FiringAngle))) * h.FiringRadius
 
-		effectSize := h.Size * 0.3
-		h.FiringEffect.Move(fyne.NewPos(effectX-effectSize/2, effectY-effectSize/2))
+		h.FiringEffect.Move(fyne.NewPos(effectCenterX-effectRadius, effectCenterY-effectRadius))
 		h.FiringEffect.Show()
 	} else {
 		h.FiringEffect.Hide()
