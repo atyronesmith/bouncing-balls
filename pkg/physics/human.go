@@ -12,7 +12,10 @@ import (
 type Bullet struct {
 	X, Y     float32 // current position
 	VX, VY   float32 // velocity
-	Visual   *canvas.Circle
+	// Eyeball components for bullets
+	Eyeball  *canvas.Circle  // White eyeball
+	Iris     *canvas.Circle  // Colored iris
+	Pupil    *canvas.Circle  // Black pupil
 	IsActive bool
 }
 
@@ -42,11 +45,13 @@ type Human struct {
 	RightArm       *canvas.Rectangle // Right arm
 	LeftLeg        *canvas.Rectangle // Left leg
 	RightLeg       *canvas.Rectangle // Right leg
-	DirectionArrow *canvas.Line      // Arrow showing facing direction (deprecated)
+	// Rotation field for facing direction calculations
 	Rotation       float64           // Current rotation angle in radians
 	// Firing circle system
 	FiringCircle   *canvas.Circle    // Transparent circle around human for bullet origin
-	FiringEffect   *canvas.Circle    // Highlighted arc/segment that shows when firing
+	FiringEye      *canvas.Circle    // Outer eyeball (white) that shows when firing
+	FiringIris     *canvas.Circle    // Colored iris (red/orange) inside the eye
+	FiringPupil    *canvas.Circle    // Black pupil in center of eye
 	FiringAngle    float32           // Current angle where bullets are fired from
 	FiringEffectTimer int            // Timer for showing firing effect
 	FiringRadius   float32           // Radius of the firing circle
@@ -159,34 +164,52 @@ func NewHuman(x, y, size float32) *Human {
 	human.RightLeg.Resize(fyne.NewSize(size*0.2, size*0.4))
 	human.RightLeg.Move(fyne.NewPos(x+size*0.3, y+size*0.2))
 
-	// Create direction arrow to show facing direction
-	human.DirectionArrow = &canvas.Line{
-		StrokeColor: color.RGBA{R: 255, G: 0, B: 0, A: 255}, // Red arrow
-		StrokeWidth: 3.0,
-	}
-
 	// Create firing circle system
 	human.FiringRadius = size * 1.5 // Circle radius around human
 
 	// Transparent firing circle with only edge visible
 	human.FiringCircle = &canvas.Circle{
 		FillColor:   color.RGBA{R: 0, G: 0, B: 0, A: 0},           // Completely transparent interior
-		StrokeColor: color.RGBA{R: 0, G: 150, B: 255, A: 13},      // 95% transparent blue edge (255 * 0.05 = ~13)
-		StrokeWidth: 2.0,
+		StrokeColor: color.RGBA{R: 0, G: 150, B: 255, A: 3},       // 99% transparent blue edge (almost invisible)
+		StrokeWidth: 1.0,
 	}
 	human.FiringCircle.Resize(fyne.NewSize(human.FiringRadius*2, human.FiringRadius*2))
 	human.FiringCircle.Move(fyne.NewPos(x-human.FiringRadius, y-human.FiringRadius))
 
 	// Firing effect (highlights a portion of the circle edge when shooting)
-	human.FiringEffect = &canvas.Circle{
-		FillColor:   color.RGBA{R: 0, G: 0, B: 0, A: 0},           // Transparent interior
-		StrokeColor: color.RGBA{R: 255, G: 200, B: 0, A: 255},     // Bright orange edge highlight
-		StrokeWidth: 6.0,                                          // Thicker than normal circle
+	human.FiringEye = &canvas.Circle{
+		FillColor:   color.RGBA{R: 255, G: 255, B: 255, A: 255}, // White eyeball
+		StrokeColor: color.RGBA{R: 255, G: 0, B: 0, A: 255},     // Red outline for menacing look
+		StrokeWidth: 3.0,
 	}
-	// Make the effect smaller to show just a segment
-	effectRadius := human.FiringRadius * 0.3 // Match the radius calculation in updateFiringCircle
-	human.FiringEffect.Resize(fyne.NewSize(effectRadius*2, effectRadius*2))
-	human.FiringEffect.Hide() // Initially hidden
+	eyeballSize := human.FiringRadius * 0.267  // Smaller eye size (1/3 of original)
+	human.FiringEye.Resize(fyne.NewSize(eyeballSize, eyeballSize))
+	human.FiringEye.Move(fyne.NewPos(x-human.FiringRadius, y-human.FiringRadius))
+
+	// Firing iris - make it more vibrant
+	human.FiringIris = &canvas.Circle{
+		FillColor:   color.RGBA{R: 255, G: 50, B: 0, A: 255},     // Bright orange-red iris
+		StrokeColor: color.RGBA{R: 150, G: 0, B: 0, A: 255},      // Dark red outline
+		StrokeWidth: 2.0,
+	}
+	irisSize := eyeballSize * 0.7 // Larger iris proportion
+	human.FiringIris.Resize(fyne.NewSize(irisSize, irisSize))
+	human.FiringIris.Move(fyne.NewPos(x-human.FiringRadius, y-human.FiringRadius))
+
+	// Firing pupil - make it more prominent
+	human.FiringPupil = &canvas.Circle{
+		FillColor:   color.RGBA{R: 0, G: 0, B: 0, A: 255},         // Black pupil
+		StrokeColor: color.RGBA{R: 255, G: 255, B: 255, A: 255},   // White outline for contrast
+		StrokeWidth: 2.0,
+	}
+	pupilSize := eyeballSize * 0.35 // Larger pupil for more intensity
+	human.FiringPupil.Resize(fyne.NewSize(pupilSize, pupilSize))
+	human.FiringPupil.Move(fyne.NewPos(x-human.FiringRadius, y-human.FiringRadius))
+
+	// Hide eye components initially
+	human.FiringEye.Hide()
+	human.FiringIris.Hide()
+	human.FiringPupil.Hide()
 
 	// Initialize firing system
 	human.FiringAngle = 0
@@ -234,61 +257,8 @@ func (h *Human) UpdatePosition() {
 	h.RightLeg.Move(fyne.NewPos(h.X+h.Size*0.05, h.Y+h.Size*0.3))
 	h.RightLeg.Resize(fyne.NewSize(h.Size*0.2, h.Size*0.5))
 
-	// Update direction arrow to show facing direction
-	h.updateDirectionArrow()
-
 	// Update firing circle position
 	h.updateFiringCircle()
-}
-
-// updateDirectionArrow updates the direction arrow to show which way the human is facing
-func (h *Human) updateDirectionArrow() {
-	if h.Rotation == 0 {
-		// Hide arrow when not rotating
-		h.DirectionArrow.Position1 = fyne.NewPos(h.X, h.Y)
-		h.DirectionArrow.Position2 = fyne.NewPos(h.X, h.Y)
-		return
-	}
-
-	// Calculate arrow direction based on rotation
-	arrowLength := h.Size * 0.8
-	endX := h.X + float32(math.Cos(h.Rotation))*arrowLength
-	endY := h.Y + float32(math.Sin(h.Rotation))*arrowLength
-
-	// Set arrow from human center to direction
-	h.DirectionArrow.Position1 = fyne.NewPos(h.X, h.Y)
-	h.DirectionArrow.Position2 = fyne.NewPos(endX, endY)
-}
-
-// updateEyeTracking makes the pupils look at the closest ball
-func (h *Human) updateEyeTracking() {
-	if !h.IsActive {
-		return
-	}
-
-	// Get left and right eye centers
-	leftEyeCenterX := h.X - h.Size*0.175 // Center of left eye
-	leftEyeCenterY := h.Y - h.Size*0.425
-
-	rightEyeCenterX := h.X + h.Size*0.175 // Center of right eye
-	rightEyeCenterY := h.Y - h.Size*0.425
-
-	// Default pupil positions (center of eyes) when no balls
-	leftPupilX := leftEyeCenterX
-	leftPupilY := leftEyeCenterY
-	rightPupilX := rightEyeCenterX
-	rightPupilY := rightEyeCenterY
-
-	// Find closest ball for eye tracking (we'll need to pass balls to this method)
-	// For now, pupils stay centered - we'll update this when we modify the Update method
-
-	// Position pupils (slightly smaller than eyes)
-	pupilSize := h.Size * 0.08
-	h.LeftPupil.Move(fyne.NewPos(leftPupilX-pupilSize/2, leftPupilY-pupilSize/2))
-	h.LeftPupil.Resize(fyne.NewSize(pupilSize, pupilSize))
-
-	h.RightPupil.Move(fyne.NewPos(rightPupilX-pupilSize/2, rightPupilY-pupilSize/2))
-	h.RightPupil.Resize(fyne.NewSize(pupilSize, pupilSize))
 }
 
 // updateEyeTrackingWithBalls makes the pupils look at the closest ball
@@ -638,9 +608,10 @@ func (h *Human) Explode() {
 	h.RightArm.Hide()
 	h.LeftLeg.Hide()
 	h.RightLeg.Hide()
-	h.DirectionArrow.Hide()
 	h.FiringCircle.Hide()
-	h.FiringEffect.Hide()
+	h.FiringEye.Hide()
+	h.FiringIris.Hide()
+	h.FiringPupil.Hide()
 
 	// Create explosion particles
 	numParticles := 12
@@ -743,9 +714,10 @@ func (h *Human) Respawn() {
 	h.RightArm.Show()
 	h.LeftLeg.Show()
 	h.RightLeg.Show()
-	h.DirectionArrow.Show()
 	h.FiringCircle.Show()
-	h.FiringEffect.Show()
+	h.FiringEye.Show()
+	h.FiringIris.Show()
+	h.FiringPupil.Show()
 
 	h.UpdatePosition()
 }
@@ -775,9 +747,10 @@ func (h *Human) RespawnWithBalls(balls []*Ball) {
 	h.RightArm.Show()
 	h.LeftLeg.Show()
 	h.RightLeg.Show()
-	h.DirectionArrow.Show()
 	h.FiringCircle.Show()
-	h.FiringEffect.Show()
+	h.FiringEye.Show()
+	h.FiringIris.Show()
+	h.FiringPupil.Show()
 
 	h.UpdatePosition()
 }
@@ -835,7 +808,7 @@ func (h *Human) findSafestRespawnLocation(balls []*Ball) (float32, float32) {
 // UpdatePointing updates the arms to point at the closest ball
 // UpdatePointing is no longer needed since we're using a PNG image
 // The human image will show a static pose
-func (h *Human) UpdatePointing(balls []*Ball) {
+func (h *Human) UpdatePointing(_ []*Ball) {
 	// No longer needed with PNG image - keeping empty for compatibility
 }
 
@@ -859,14 +832,37 @@ func NewBullet(startX, startY, targetX, targetY float32) *Bullet {
 		IsActive: true,
 	}
 
-	// Create visual representation - large, very visible bullet
-	bullet.Visual = &canvas.Circle{
-		FillColor:   color.RGBA{R: 255, G: 0, B: 255, A: 255}, // Bright magenta bullet
-		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 255},     // Black border for visibility
-		StrokeWidth: 3.0,
+	// Create eyeball bullet components
+	bulletSize := float32(20) // Size of the bullet eyeball
+
+	// White eyeball (outer layer)
+	bullet.Eyeball = &canvas.Circle{
+		FillColor:   color.RGBA{R: 255, G: 255, B: 255, A: 255}, // White eyeball
+		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 255},       // Black outline
+		StrokeWidth: 2.0,
 	}
-	bullet.Visual.Resize(fyne.NewSize(16, 16)) // Much larger bullet for testing
-	bullet.Visual.Move(fyne.NewPos(startX-8, startY-8)) // Center the larger bullet
+	bullet.Eyeball.Resize(fyne.NewSize(bulletSize, bulletSize))
+	bullet.Eyeball.Move(fyne.NewPos(startX-bulletSize/2, startY-bulletSize/2))
+
+	// Colored iris (middle layer)
+	irisSize := bulletSize * 0.7
+	bullet.Iris = &canvas.Circle{
+		FillColor:   color.RGBA{R: 0, G: 255, B: 255, A: 255},   // Cyan iris for visibility
+		StrokeColor: color.RGBA{R: 0, G: 150, B: 150, A: 255},   // Darker cyan outline
+		StrokeWidth: 1.0,
+	}
+	bullet.Iris.Resize(fyne.NewSize(irisSize, irisSize))
+	bullet.Iris.Move(fyne.NewPos(startX-irisSize/2, startY-irisSize/2))
+
+	// Black pupil (inner layer)
+	pupilSize := bulletSize * 0.35
+	bullet.Pupil = &canvas.Circle{
+		FillColor:   color.RGBA{R: 0, G: 0, B: 0, A: 255},       // Black pupil
+		StrokeColor: color.RGBA{R: 255, G: 255, B: 255, A: 255}, // White outline
+		StrokeWidth: 1.0,
+	}
+	bullet.Pupil.Resize(fyne.NewSize(pupilSize, pupilSize))
+	bullet.Pupil.Move(fyne.NewPos(startX-pupilSize/2, startY-pupilSize/2))
 
 	return bullet
 }
@@ -881,14 +877,22 @@ func (h *Human) UpdateBullets() {
 		}
 
 		// Update bullet position
+		bulletSize := float32(20) // Size of the bullet eyeball (match NewBullet)
+		irisSize := bulletSize * 0.7
+		pupilSize := bulletSize * 0.35
+
 		bullet.X += bullet.VX
 		bullet.Y += bullet.VY
-		bullet.Visual.Move(fyne.NewPos(bullet.X-8, bullet.Y-8))
+		bullet.Eyeball.Move(fyne.NewPos(bullet.X-bulletSize/2, bullet.Y-bulletSize/2))
+		bullet.Iris.Move(fyne.NewPos(bullet.X-irisSize/2, bullet.Y-irisSize/2))
+		bullet.Pupil.Move(fyne.NewPos(bullet.X-pupilSize/2, bullet.Y-pupilSize/2))
 
 		// Remove bullets that go off screen
 		if bullet.X < 0 || bullet.X > h.Bounds.Width || bullet.Y < 0 || bullet.Y > h.Bounds.Height {
 			bullet.IsActive = false
-			bullet.Visual.Hide()
+			bullet.Eyeball.Hide()
+			bullet.Iris.Hide()
+			bullet.Pupil.Hide()
 			// Remove from slice
 			h.Bullets = append(h.Bullets[:i], h.Bullets[i+1:]...)
 		}
@@ -961,10 +965,12 @@ func (h *Human) CheckBulletCollisions(balls []*Ball) {
 			dy := bullet.Y - ball.Y
 			distance := float32(math.Sqrt(float64(dx*dx + dy*dy)))
 
-			if distance < ball.Radius+8 { // bullet radius is now 8
+			if distance < ball.Radius+10 { // bullet radius is now 10 (bulletSize/2 = 20/2 = 10)
 				// Bullet hit ball!
 				bullet.IsActive = false
-				bullet.Visual.Hide()
+				bullet.Eyeball.Hide()
+				bullet.Iris.Hide()
+				bullet.Pupil.Hide()
 
 				// Apply repulsion force to the ball
 				if distance > 0 {
@@ -1003,7 +1009,9 @@ func (h *Human) GetBulletVisuals() []*canvas.Circle {
 	visuals := make([]*canvas.Circle, 0, len(h.Bullets))
 	for _, bullet := range h.Bullets {
 		if bullet.IsActive {
-			visuals = append(visuals, bullet.Visual)
+			visuals = append(visuals, bullet.Eyeball)
+			visuals = append(visuals, bullet.Iris)
+			visuals = append(visuals, bullet.Pupil)
 		}
 	}
 	return visuals
@@ -1023,14 +1031,33 @@ func (h *Human) updateFiringCircle() {
 		h.FiringEffectTimer--
 
 		// Position firing effect to appear as a highlighted segment on the main circle edge
-		effectRadius := h.FiringRadius * 0.3 // Radius of the effect circle
 		// Position effect center on the main circle's edge at the firing angle
 		effectCenterX := h.X + float32(math.Cos(float64(h.FiringAngle))) * h.FiringRadius
 		effectCenterY := h.Y + float32(math.Sin(float64(h.FiringAngle))) * h.FiringRadius
 
-		h.FiringEffect.Move(fyne.NewPos(effectCenterX-effectRadius, effectCenterY-effectRadius))
-		h.FiringEffect.Show()
+		// Position eyeball at the calculated position (use consistent sizing)
+		eyeballSize := h.FiringRadius * 0.267   // Smaller eye size (1/3 of original)
+		irisSize := eyeballSize * 0.7         // Larger iris proportion
+		pupilSize := eyeballSize * 0.35       // Larger pupil for more intensity
+
+		eyeballRadius := eyeballSize / 2      // Convert size to radius for positioning
+		irisRadius := irisSize / 2
+		pupilRadius := pupilSize / 2
+
+		// Position eyeball
+		h.FiringEye.Move(fyne.NewPos(effectCenterX-eyeballRadius, effectCenterY-eyeballRadius))
+		h.FiringEye.Show()
+
+		// Position iris centered within eyeball
+		h.FiringIris.Move(fyne.NewPos(effectCenterX-irisRadius, effectCenterY-irisRadius))
+		h.FiringIris.Show()
+
+		// Position pupil centered within iris
+		h.FiringPupil.Move(fyne.NewPos(effectCenterX-pupilRadius, effectCenterY-pupilRadius))
+		h.FiringPupil.Show()
 	} else {
-		h.FiringEffect.Hide()
+		h.FiringEye.Hide()
+		h.FiringIris.Hide()
+		h.FiringPupil.Hide()
 	}
 }
