@@ -33,6 +33,11 @@ type Dragon struct {
 	SpinAngle  float32 // current spin angle
 	SpinCount  int     // number of spins completed
 	SpinTarget int     // target number of spins (4)
+	// Intercept rotation state
+	IsIntercepting     bool    // whether dragon is currently intercepting a ball
+	InterceptAngle     float32 // current rotation angle during intercept
+	TargetAngle        float32 // target angle to rotate toward
+	ReturnToHorizontal bool    // flag to return to horizontal after collision
 	// Visual components
 	Head      *canvas.Circle
 	Body      *canvas.Rectangle
@@ -364,6 +369,10 @@ func (d *Dragon) HandleBallCollision(ball *Ball, human *Human) {
 		d.IsSpinning = false
 		d.SpinAngle = 0
 		d.SpinCount = 0
+
+		// Set flag to return to horizontal after collision
+		d.IsIntercepting = false
+		d.ReturnToHorizontal = true
 	}
 }
 
@@ -413,6 +422,30 @@ func (d *Dragon) updateDrifting() {
 	// Apply friction to slow down drifting
 	d.VX *= 0.95 // Less friction for more responsive recovery
 	d.VY *= 0.95
+
+	// Smoothly return to horizontal during drift
+	if d.ReturnToHorizontal {
+		targetHorizontal := float32(0)
+		angleDiff := targetHorizontal - d.InterceptAngle
+
+		// Normalize angle difference to [-pi, pi] range
+		for angleDiff > math.Pi {
+			angleDiff -= 2 * math.Pi
+		}
+		for angleDiff < -math.Pi {
+			angleDiff += 2 * math.Pi
+		}
+
+		// Return to horizontal with smooth rotation
+		returnSpeed := float32(0.08) // Slower return during drift
+		d.InterceptAngle += angleDiff * returnSpeed
+
+		// Stop returning when close enough to horizontal
+		if math.Abs(float64(angleDiff)) < 0.1 {
+			d.InterceptAngle = 0
+			d.ReturnToHorizontal = false
+		}
+	}
 
 	// Check if drift time is over
 	if d.DriftTimer <= 0 {
@@ -476,6 +509,26 @@ func (d *Dragon) interceptBall(ball *Ball, human *Human) {
 	distance := float32(math.Sqrt(float64(dx*dx + dy*dy)))
 
 	if distance > 0 {
+		// Calculate angle to the ball for rotation alignment
+		d.TargetAngle = float32(math.Atan2(float64(dy), float64(dx)))
+		d.IsIntercepting = true
+		d.ReturnToHorizontal = false
+
+		// Smoothly rotate toward target angle
+		angleDiff := d.TargetAngle - d.InterceptAngle
+
+		// Normalize angle difference to [-pi, pi] range
+		for angleDiff > math.Pi {
+			angleDiff -= 2 * math.Pi
+		}
+		for angleDiff < -math.Pi {
+			angleDiff += 2 * math.Pi
+		}
+
+		// Smooth rotation toward target
+		rotationSpeed := float32(0.15) // Adjust for faster/slower rotation
+		d.InterceptAngle += angleDiff * rotationSpeed
+
 		// Simple interception: move toward ball's current position aggressively
 		normalizedDx := dx / distance
 		normalizedDy := dy / distance
@@ -488,6 +541,36 @@ func (d *Dragon) interceptBall(ball *Ball, human *Human) {
 
 // followHuman makes dragon follow the human at preferred distance
 func (d *Dragon) followHuman(human *Human) {
+	// When following (not intercepting), prepare to return to horizontal
+	if d.IsIntercepting {
+		d.IsIntercepting = false
+		d.ReturnToHorizontal = true
+	}
+
+	// Smoothly return to horizontal orientation (0 radians)
+	if d.ReturnToHorizontal {
+		targetHorizontal := float32(0)
+		angleDiff := targetHorizontal - d.InterceptAngle
+
+		// Normalize angle difference to [-pi, pi] range
+		for angleDiff > math.Pi {
+			angleDiff -= 2 * math.Pi
+		}
+		for angleDiff < -math.Pi {
+			angleDiff += 2 * math.Pi
+		}
+
+		// Return to horizontal with smooth rotation
+		returnSpeed := float32(0.1) // Slower return to horizontal
+		d.InterceptAngle += angleDiff * returnSpeed
+
+		// Stop returning when close enough to horizontal
+		if math.Abs(float64(angleDiff)) < 0.1 {
+			d.InterceptAngle = 0
+			d.ReturnToHorizontal = false
+		}
+	}
+
 	// Calculate distance to human
 	dx := human.X - d.X
 	dy := human.Y - d.Y
@@ -536,8 +619,8 @@ func (d *Dragon) keepWithinBounds() {
 		if d.VY < 0 {
 			d.VY = -d.VY * 0.5 // Bounce off top wall
 		}
-	} else if d.Y > d.Bounds.Height-50-margin {
-		d.Y = d.Bounds.Height - 50 - margin
+	} else if d.Y > d.Bounds.Height-margin {
+		d.Y = d.Bounds.Height - margin
 		if d.VY > 0 {
 			d.VY = -d.VY * 0.5 // Bounce off bottom wall
 		}
@@ -579,61 +662,77 @@ func (d *Dragon) UpdatePosition() {
 		spinSin = float32(math.Sin(float64(d.SpinAngle)))
 	}
 
-	// Helper function to apply spin rotation to a position offset
-	applySpinRotation := func(offsetX, offsetY float32) (float32, float32) {
-		if !d.IsSpinning {
-			return offsetX, offsetY
+	// Intercept rotation effect - rotate to align with target ball
+	var interceptCos, interceptSin float32 = 1, 0
+	if d.IsIntercepting || d.ReturnToHorizontal {
+		interceptCos = float32(math.Cos(float64(d.InterceptAngle)))
+		interceptSin = float32(math.Sin(float64(d.InterceptAngle)))
+	}
+
+	// Helper function to apply both spin and intercept rotation to a position offset
+	applyRotations := func(offsetX, offsetY float32) (float32, float32) {
+		// First apply intercept rotation
+		if d.IsIntercepting || d.ReturnToHorizontal {
+			rotatedX := offsetX*interceptCos - offsetY*interceptSin
+			rotatedY := offsetX*interceptSin + offsetY*interceptCos
+			offsetX, offsetY = rotatedX, rotatedY
 		}
-		rotatedX := offsetX*spinCos - offsetY*spinSin
-		rotatedY := offsetX*spinSin + offsetY*spinCos
-		return rotatedX, rotatedY
+
+		// Then apply spin rotation (if spinning)
+		if d.IsSpinning {
+			rotatedX := offsetX*spinCos - offsetY*spinSin
+			rotatedY := offsetX*spinSin + offsetY*spinCos
+			return rotatedX, rotatedY
+		}
+
+		return offsetX, offsetY
 	}
 
 	// Head position (front center)
-	headOffsetX, headOffsetY := applySpinRotation(-d.Size*0.25, -d.Size*0.25)
+	headOffsetX, headOffsetY := applyRotations(-d.Size*0.25, -d.Size*0.25)
 	d.Head.Move(fyne.NewPos(d.X+headOffsetX, d.Y+headOffsetY))
 
 	// Body position (center)
-	bodyOffsetX, bodyOffsetY := applySpinRotation(-d.Size*0.4, -d.Size*0.2)
+	bodyOffsetX, bodyOffsetY := applyRotations(-d.Size*0.4, -d.Size*0.2)
 	d.Body.Move(fyne.NewPos(d.X+bodyOffsetX, d.Y+bodyOffsetY))
 
 	// Tail position (behind body)
-	tailOffsetX, tailOffsetY := applySpinRotation(-d.Size*0.8, -d.Size*0.1)
+	tailOffsetX, tailOffsetY := applyRotations(-d.Size*0.8, -d.Size*0.1)
 	d.Tail.Move(fyne.NewPos(d.X+tailOffsetX, d.Y+tailOffsetY))
 
-	// Wings positions (animated flapping + spinning)
-	leftWingOffsetX, leftWingOffsetY := applySpinRotation(-d.Size*0.6, -d.Size*0.5+wingOffset)
+	// Wings positions (animated flapping + rotations)
+	leftWingOffsetX, leftWingOffsetY := applyRotations(-d.Size*0.6, -d.Size*0.5+wingOffset)
 	d.LeftWing.Move(fyne.NewPos(d.X+leftWingOffsetX, d.Y+leftWingOffsetY))
 
-	rightWingOffsetX, rightWingOffsetY := applySpinRotation(d.Size*0.2, -d.Size*0.5-wingOffset)
+	rightWingOffsetX, rightWingOffsetY := applyRotations(d.Size*0.2, -d.Size*0.5-wingOffset)
 	d.RightWing.Move(fyne.NewPos(d.X+rightWingOffsetX, d.Y+rightWingOffsetY))
 
 	// Eyes positions (on head)
-	leftEyeOffsetX, leftEyeOffsetY := applySpinRotation(-d.Size*0.15, -d.Size*0.3)
+	leftEyeOffsetX, leftEyeOffsetY := applyRotations(-d.Size*0.15, -d.Size*0.3)
 	d.LeftEye.Move(fyne.NewPos(d.X+leftEyeOffsetX, d.Y+leftEyeOffsetY))
 
-	rightEyeOffsetX, rightEyeOffsetY := applySpinRotation(-d.Size*0.05, -d.Size*0.3)
+	rightEyeOffsetX, rightEyeOffsetY := applyRotations(-d.Size*0.05, -d.Size*0.3)
 	d.RightEye.Move(fyne.NewPos(d.X+rightEyeOffsetX, d.Y+rightEyeOffsetY))
 
-	// Update flame particles (breath effect + spinning)
+	// Update flame particles (breath effect + rotations)
 	for i, flame := range d.FlameParticles {
 		if flame != nil {
 			// Base flame position
 			baseFlameX := -d.Size*0.5 - float32(i)*8
 			baseFlameY := float32(math.Sin(float64(d.FlameTimer)*0.1+float64(i)*0.5)) * 3
 
-			// Apply spin rotation to flame position
-			flameOffsetX, flameOffsetY := applySpinRotation(baseFlameX, baseFlameY)
+			// Apply rotations to flame position
+			flameOffsetX, flameOffsetY := applyRotations(baseFlameX, baseFlameY)
 
 			flameSize := d.Size * 0.15 * (1.0 - float32(i)*0.1)
 			flame.Move(fyne.NewPos(d.X+flameOffsetX-flameSize/2, d.Y+flameOffsetY-flameSize/2))
 
-			// Animate flame color (more intense during spinning)
+			// Animate flame color (more intense during spinning or intercepting)
 			alpha := uint8(200 - i*20)
 			red := uint8(255)
 			green := uint8(100 + i*10)
-			if d.IsSpinning {
-				green = uint8(150 + i*10) // More intense flames during spin
+			if d.IsSpinning || d.IsIntercepting {
+				green = uint8(150 + i*10) // More intense flames during action
 			}
 			flame.FillColor = color.RGBA{R: red, G: green, B: 50, A: alpha}
 			flame.Refresh()

@@ -57,6 +57,39 @@ func getRandomLLMName() string {
 	return llmNames[rand.Intn(len(llmNames))]
 }
 
+// getTextColorForLLM returns a bright, contrasting color for each LLM name
+func getTextColorForLLM(llmName string) color.RGBA {
+	// Create distinctive colors for different AI models
+	switch llmName {
+	case "GPT-4":
+		return color.RGBA{R: 0, G: 255, B: 255, A: 220}   // Bright cyan
+	case "Claude":
+		return color.RGBA{R: 255, G: 255, B: 0, A: 220}   // Bright yellow
+	case "Gemini":
+		return color.RGBA{R: 255, G: 100, B: 255, A: 220} // Bright magenta
+	case "LLaMA":
+		return color.RGBA{R: 100, G: 255, B: 100, A: 220} // Bright green
+	case "PaLM":
+		return color.RGBA{R: 255, G: 150, B: 0, A: 220}   // Bright orange
+	case "Bard":
+		return color.RGBA{R: 150, G: 255, B: 255, A: 220} // Light cyan
+	case "ChatGPT":
+		return color.RGBA{R: 255, G: 255, B: 150, A: 220} // Light yellow
+	case "Codex":
+		return color.RGBA{R: 255, G: 150, B: 255, A: 220} // Light magenta
+	case "Alpaca":
+		return color.RGBA{R: 150, G: 255, B: 150, A: 220} // Light green
+	case "Vicuna":
+		return color.RGBA{R: 255, G: 200, B: 100, A: 220} // Light orange
+	case "Mistral":
+		return color.RGBA{R: 100, G: 200, B: 255, A: 220} // Light blue
+	case "Llama2":
+		return color.RGBA{R: 255, G: 100, B: 150, A: 220} // Pink
+	default:
+		return color.RGBA{R: 255, G: 255, B: 255, A: 220} // White as fallback
+	}
+}
+
 // updateTextSize calculates and sets the appropriate font size for the text to fit inside the ball
 func (b *Ball) updateTextSize() {
 	if b.Text == nil {
@@ -65,15 +98,14 @@ func (b *Ball) updateTextSize() {
 
 	// Simple font size based on ball radius
 	// Larger balls get larger text, smaller balls get smaller text
-	fontSize := b.Radius * 0.4 // Scale factor based on radius
+	fontSize := b.Radius * 0.5 // Increased scale factor for better visibility
 
-	// Ensure reasonable bounds
-	if fontSize < 8 {
-		fontSize = 8
-	} else if fontSize > 20 {
-		fontSize = 20
+	// Ensure reasonable bounds - larger minimum for star field visibility
+	if fontSize < 12 {
+		fontSize = 12 // Larger minimum for visibility against star field
+	} else if fontSize > 24 {
+		fontSize = 24 // Larger maximum for prominent display
 	}
-	// fontSize is within bounds, no change needed
 
 	// Apply the font size
 	b.Text.TextSize = fontSize
@@ -131,13 +163,13 @@ func NewBall() *Ball {
 		ball.BloodVeins[i] = vein
 	}
 
-	// Create the text label for the AI LLM name (smaller now to not interfere with eye)
+	// Create the text label for the AI LLM name - bright and visible against star field
 	ball.Text = &canvas.Text{
 		Text:      ball.LLMName,
-		Color:     color.RGBA{R: 0, G: 0, B: 0, A: 255}, // Black text for visibility on white
+		Color:     getTextColorForLLM(ball.LLMName),
 		Alignment: fyne.TextAlignCenter,
 		TextStyle: fyne.TextStyle{Bold: true},
-		TextSize:  8, // Smaller initial size for eyeball
+		TextSize:  12, // Larger size for better visibility against star field
 	}
 
 	// Set initial size and position
@@ -342,17 +374,17 @@ func (b *Ball) Update() {
 	}
 
 	// Top and bottom walls
-	if b.Y-b.Radius <= 50 || b.Y+b.Radius >= b.Bounds.Height-50 { // Account for button area
+	if b.Y-b.Radius <= 0 || b.Y+b.Radius >= b.Bounds.Height { // Use actual bounds
 		b.VY = -b.VY
 		// Trigger jiggle effect based on impact velocity
 		impactIntensity := float32(math.Abs(float64(b.VY))) / 8.0 // Increased to 8.0 for gentler effect
 		b.triggerJiggle(impactIntensity)
 
 		// Keep ball within bounds
-		if b.Y-b.Radius < 50 {
-			b.Y = 50 + b.Radius
-		} else if b.Y+b.Radius > b.Bounds.Height-50 {
-			b.Y = b.Bounds.Height - 50 - b.Radius
+		if b.Y-b.Radius < 0 {
+			b.Y = b.Radius
+		} else if b.Y+b.Radius > b.Bounds.Height {
+			b.Y = b.Bounds.Height - b.Radius
 		}
 	}
 
@@ -542,13 +574,13 @@ func NewCustomBall(x, y, vx, vy, radius float32, fillColor, strokeColor color.RG
 		ball.BloodVeins[i] = vein
 	}
 
-	// Create the text label for the AI LLM name (smaller now to not interfere with eye)
+	// Create the text label for the AI LLM name - bright and visible against star field
 	ball.Text = &canvas.Text{
 		Text:      ball.LLMName,
-		Color:     color.RGBA{R: 0, G: 0, B: 0, A: 255}, // Black text for visibility on white
+		Color:     getTextColorForLLM(ball.LLMName),
 		Alignment: fyne.TextAlignCenter,
 		TextStyle: fyne.TextStyle{Bold: true},
-		TextSize:  8, // Smaller initial size for eyeball
+		TextSize:  12, // Larger size for better visibility against star field
 	}
 
 	// Set initial size and position

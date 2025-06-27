@@ -19,6 +19,7 @@ type App struct {
 	human           *physics.Human
 	dragon          *physics.Dragon
 	starField       *physics.StarField // Moving star field background
+	alien           *physics.Alien     // Mysterious alien that drifts through space
 	currentBounds   fyne.Size
 	animationTicker *time.Ticker
 	content         *fyne.Container // Main content container for dynamic elements
@@ -28,32 +29,42 @@ type App struct {
 func NewApp() *App {
 	return &App{
 		fyneApp:       app.New(),
-		currentBounds: fyne.NewSize(800, 600),
+		currentBounds: fyne.NewSize(800, 600), // Game area size, not window size
 	}
 }
 
 // updateBounds updates the bounds for all physics objects
 func (a *App) updateBounds(newSize fyne.Size) {
-	a.currentBounds = newSize
+	// Account for button area at the top (approximately 50 pixels)
+	buttonHeight := float32(50)
+	gameArea := fyne.NewSize(newSize.Width, newSize.Height-buttonHeight)
+
+	// Store the actual game area bounds (not the full window size)
+	a.currentBounds = gameArea
 
 	// Update bounds for all balls
 	for _, ball := range a.balls {
-		ball.Bounds = newSize
+		ball.Bounds = gameArea
 	}
 
 	// Update bounds for human
 	if a.human != nil {
-		a.human.Bounds = newSize
+		a.human.Bounds = gameArea
 	}
 
 	// Update bounds for dragon
 	if a.dragon != nil {
-		a.dragon.Bounds = newSize
+		a.dragon.Bounds = gameArea
 	}
 
 	// Update bounds for star field
 	if a.starField != nil {
-		a.starField.UpdateBounds(newSize)
+		a.starField.UpdateBounds(gameArea)
+	}
+
+	// Update bounds for alien
+	if a.alien != nil {
+		a.alien.SetBounds(gameArea)
 	}
 }
 
@@ -142,6 +153,8 @@ func (a *App) startAnimation() {
 							}
 							if !found {
 								a.content.Add(bullet)
+								// Bring bullet to front so it's visible above other elements
+								bullet.Show()
 							}
 						}
 
@@ -190,6 +203,11 @@ func (a *App) startAnimation() {
 					a.dragon.Update(a.balls, a.human)
 					a.dragon.UpdatePosition()
 				}
+
+				// Update alien (drifts peacefully through the star field)
+				if a.alien != nil && a.alien.IsActive {
+					a.alien.Update()
+				}
 			}
 		}
 	}()
@@ -199,9 +217,18 @@ func (a *App) startAnimation() {
 func (a *App) Run() {
 	a.fyneApp.SetIcon(nil)
 
-	// Create a fixed size window
-	a.window = a.fyneApp.NewWindow("🚀 Eyeball Space Travel Simulator - Flying Through the Galaxy! (800x600)")
-	a.window.Resize(a.currentBounds)
+	// Define the game area size (800x600)
+	gameAreaWidth := float32(800)
+	gameAreaHeight := float32(600)
+	buttonHeight := float32(50)
+
+	// Window size should exactly match game area + button area
+	windowWidth := gameAreaWidth
+	windowHeight := gameAreaHeight + buttonHeight
+
+	// Create a properly sized window
+	a.window = a.fyneApp.NewWindow("🚀 Eyeball Space Travel Simulator - Flying Through the Galaxy!")
+	a.window.Resize(fyne.NewSize(windowWidth, windowHeight))
 	a.window.CenterOnScreen()
 	a.window.SetFixedSize(true) // Make window non-resizable
 
@@ -239,21 +266,21 @@ func (a *App) Run() {
 	// Create the dragon
 	a.dragon = physics.NewDragon(200, 200, 40)
 
+	// Create the mysterious alien that drifts through space
+	a.alien = physics.NewAlienFromFile(600, 150, 60, "alien.png") // Mysterious alien face that drifts peacefully
+
 	// Create realistic star field background with galactic distribution
-	a.starField = physics.NewStarField(400, a.currentBounds) // 400 stars for better realistic distribution
+	a.starField = physics.NewStarField(400, fyne.NewSize(gameAreaWidth, gameAreaHeight)) // 400 stars for better realistic distribution
 
 	// Update bounds for all objects
-	a.updateBounds(a.currentBounds)
-
-	// Create instruction label
-	label := widget.NewLabel("🚀 Space Travel Simulator - Flying through a realistic galaxy with parallax star movement!")
-	label.Alignment = fyne.TextAlignCenter
+	a.updateBounds(fyne.NewSize(windowWidth, windowHeight))
 
 	// Create UI controls
 	controls := a.createControls()
 
-	// Create the main container
+	// Create the main game content container with proper sizing
 	a.content = container.NewWithoutLayout()
+	a.content.Resize(fyne.NewSize(gameAreaWidth, gameAreaHeight)) // Use the exact game area size
 
 	// Add star field to background (first layer)
 	for _, star := range a.starField.GetVisuals() {
@@ -306,11 +333,19 @@ func (a *App) Run() {
 		a.content.Add(component)
 	}
 
-	// Create the full layout
-	fullContent := container.NewVBox(
-		label,
-		a.content,
-		controls,
+	// Add alien figure components (drifts peacefully through space)
+	alienComponents := a.alien.GetVisualComponents()
+	for _, component := range alienComponents {
+		a.content.Add(component)
+	}
+
+	// Create the full layout with controls at top and game content filling the rest
+	fullContent := container.NewBorder(
+		controls,   // top
+		nil,        // bottom
+		nil,        // left
+		nil,        // right
+		a.content,  // center (game content container)
 	)
 
 	// Set the content
@@ -352,8 +387,8 @@ func (a *App) createControls() *fyne.Container {
 		a.fyneApp.Quit()
 	})
 
-	// Create a horizontal container for buttons
-	return container.NewHBox(
+	// Create a horizontal container for buttons with even spacing
+	return container.NewGridWithColumns(5,
 		startButton,
 		stopButton,
 		colorButton,
@@ -404,4 +439,11 @@ func (a *App) resetAll() {
 	a.dragon.IsActive = true
 	a.dragon.Show()
 	a.dragon.UpdatePosition()
+
+	// Reset alien to a new random position at screen edge
+	if a.alien != nil {
+		a.alien.Respawn()
+		a.alien.IsActive = true
+		a.alien.Show()
+	}
 }

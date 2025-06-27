@@ -188,10 +188,6 @@ func (h *Human) UpdateRotation(balls []*Ball) {
 
 	// Update rotation
 	h.Rotation = targetAngle
-
-	// Debug output (uncomment to see rotation values)
-	// degrees := targetAngle * 180 / math.Pi
-	// fmt.Printf("Human rotation: %.1f degrees (facing ball at %.0f,%.0f)\n", degrees, closestBall.X, closestBall.Y)
 }
 
 // Update handles both keyboard input and AI avoidance behavior
@@ -321,7 +317,7 @@ func (h *Human) calculateAvoidance(balls []*Ball) (float32, float32) {
 func (h *Human) calculateCentering() (float32, float32) {
 	// Calculate center of the panel
 	centerX := h.Bounds.Width / 2
-	centerY := (h.Bounds.Height + 50) / 2 // Account for button area (50px top, 50px bottom)
+	centerY := h.Bounds.Height / 2 // Center of game area
 
 	// Calculate distance to center
 	dx := centerX - h.X
@@ -357,10 +353,10 @@ func (h *Human) keepWithinBounds() {
 	}
 
 	// Vertical boundaries: still clamp to prevent going off top/bottom
-	if h.Y < 50+margin { // Account for button area
-		h.Y = 50 + margin
-	} else if h.Y > h.Bounds.Height-50-margin {
-		h.Y = h.Bounds.Height - 50 - margin
+	if h.Y < margin { // Use actual bounds
+		h.Y = margin
+	} else if h.Y > h.Bounds.Height-margin {
+		h.Y = h.Bounds.Height - margin
 	}
 }
 
@@ -599,14 +595,14 @@ func NewBullet(startX, startY, targetX, targetY float32) *Bullet {
 		IsActive: true,
 	}
 
-	// Create visual representation - small yellow circle
+	// Create visual representation - large, very visible bullet
 	bullet.Visual = &canvas.Circle{
-		FillColor:   color.RGBA{R: 255, G: 255, B: 0, A: 255}, // Yellow bullet
-		StrokeColor: color.RGBA{R: 255, G: 200, B: 0, A: 255},
-		StrokeWidth: 1.0,
+		FillColor:   color.RGBA{R: 255, G: 0, B: 255, A: 255}, // Bright magenta bullet
+		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 255},     // Black border for visibility
+		StrokeWidth: 3.0,
 	}
-	bullet.Visual.Resize(fyne.NewSize(4, 4)) // Small bullet
-	bullet.Visual.Move(fyne.NewPos(startX-2, startY-2))
+	bullet.Visual.Resize(fyne.NewSize(16, 16)) // Much larger bullet for testing
+	bullet.Visual.Move(fyne.NewPos(startX-8, startY-8)) // Center the larger bullet
 
 	return bullet
 }
@@ -623,7 +619,7 @@ func (h *Human) UpdateBullets() {
 		// Update bullet position
 		bullet.X += bullet.VX
 		bullet.Y += bullet.VY
-		bullet.Visual.Move(fyne.NewPos(bullet.X-2, bullet.Y-2))
+		bullet.Visual.Move(fyne.NewPos(bullet.X-8, bullet.Y-8))
 
 		// Remove bullets that go off screen
 		if bullet.X < 0 || bullet.X > h.Bounds.Width || bullet.Y < 0 || bullet.Y > h.Bounds.Height {
@@ -703,7 +699,7 @@ func (h *Human) CheckBulletCollisions(balls []*Ball) {
 			dy := bullet.Y - ball.Y
 			distance := float32(math.Sqrt(float64(dx*dx + dy*dy)))
 
-			if distance < ball.Radius+2 { // bullet radius is 2
+			if distance < ball.Radius+8 { // bullet radius is now 8
 				// Bullet hit ball!
 				bullet.IsActive = false
 				bullet.Visual.Hide()
