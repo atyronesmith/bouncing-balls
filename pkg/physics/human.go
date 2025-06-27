@@ -42,8 +42,14 @@ type Human struct {
 	RightArm       *canvas.Rectangle // Right arm
 	LeftLeg        *canvas.Rectangle // Left leg
 	RightLeg       *canvas.Rectangle // Right leg
-	DirectionArrow *canvas.Line      // Arrow showing facing direction
+	DirectionArrow *canvas.Line      // Arrow showing facing direction (deprecated)
 	Rotation       float64           // Current rotation angle in radians
+	// Firing circle system
+	FiringCircle   *canvas.Circle    // Transparent circle around human for bullet origin
+	FiringEffect   *canvas.Circle    // Highlighted arc/segment that shows when firing
+	FiringAngle    float32           // Current angle where bullets are fired from
+	FiringEffectTimer int            // Timer for showing firing effect
+	FiringRadius   float32           // Radius of the firing circle
 	// Explosion particles
 	ExplosionParticles []*canvas.Circle
 	// Bullet system
@@ -159,6 +165,31 @@ func NewHuman(x, y, size float32) *Human {
 		StrokeWidth: 3.0,
 	}
 
+	// Create firing circle system
+	human.FiringRadius = size * 1.5 // Circle radius around human
+
+	// Transparent firing circle
+	human.FiringCircle = &canvas.Circle{
+		FillColor:   color.RGBA{R: 100, G: 200, B: 255, A: 60}, // Light blue, very transparent
+		StrokeColor: color.RGBA{R: 0, G: 150, B: 255, A: 120},   // Blue outline, semi-transparent
+		StrokeWidth: 2.0,
+	}
+	human.FiringCircle.Resize(fyne.NewSize(human.FiringRadius*2, human.FiringRadius*2))
+	human.FiringCircle.Move(fyne.NewPos(x-human.FiringRadius, y-human.FiringRadius))
+
+	// Firing effect (shows briefly when shooting)
+	human.FiringEffect = &canvas.Circle{
+		FillColor:   color.RGBA{R: 255, G: 255, B: 100, A: 200}, // Bright yellow flash
+		StrokeColor: color.RGBA{R: 255, G: 200, B: 0, A: 255},   // Orange outline
+		StrokeWidth: 4.0,
+	}
+	human.FiringEffect.Resize(fyne.NewSize(size*0.3, size*0.3)) // Small effect
+	human.FiringEffect.Hide() // Initially hidden
+
+	// Initialize firing system
+	human.FiringAngle = 0
+	human.FiringEffectTimer = 0
+
 	// Set initial position
 	human.UpdatePosition()
 
@@ -203,6 +234,9 @@ func (h *Human) UpdatePosition() {
 
 	// Update direction arrow to show facing direction
 	h.updateDirectionArrow()
+
+	// Update firing circle position
+	h.updateFiringCircle()
 }
 
 // updateDirectionArrow updates the direction arrow to show which way the human is facing
@@ -603,6 +637,8 @@ func (h *Human) Explode() {
 	h.LeftLeg.Hide()
 	h.RightLeg.Hide()
 	h.DirectionArrow.Hide()
+	h.FiringCircle.Hide()
+	h.FiringEffect.Hide()
 
 	// Create explosion particles
 	numParticles := 12
@@ -706,6 +742,8 @@ func (h *Human) Respawn() {
 	h.LeftLeg.Show()
 	h.RightLeg.Show()
 	h.DirectionArrow.Show()
+	h.FiringCircle.Show()
+	h.FiringEffect.Show()
 
 	h.UpdatePosition()
 }
@@ -736,6 +774,8 @@ func (h *Human) RespawnWithBalls(balls []*Ball) {
 	h.LeftLeg.Show()
 	h.RightLeg.Show()
 	h.DirectionArrow.Show()
+	h.FiringCircle.Show()
+	h.FiringEffect.Show()
 
 	h.UpdatePosition()
 }
@@ -853,29 +893,27 @@ func (h *Human) UpdateBullets() {
 	}
 }
 
-// ShootAtTarget creates bullets from the end of the direction arrow toward the target
+// ShootAtTarget creates bullets from the firing circle edge toward the target
 func (h *Human) ShootAtTarget(targetX, targetY float32) {
 	if !h.IsActive || h.IsExploding {
 		return
 	}
 
-	// Calculate bullet spawn position from the end of the direction arrow
-	var bulletX, bulletY float32
+	// Calculate angle to target
+	dx := targetX - h.X
+	dy := targetY - h.Y
+	h.FiringAngle = float32(math.Atan2(float64(dy), float64(dx)))
 
-	if h.Rotation == 0 {
-		// No rotation, spawn from slightly above center
-		bulletX = h.X
-		bulletY = h.Y - h.Size*0.3
-	} else {
-		// Spawn from the end of the direction arrow
-		arrowLength := h.Size * 0.8
-		bulletX = h.X + float32(math.Cos(h.Rotation))*arrowLength
-		bulletY = h.Y + float32(math.Sin(h.Rotation))*arrowLength
-	}
+	// Calculate bullet spawn position on the firing circle edge
+	bulletX := h.X + float32(math.Cos(float64(h.FiringAngle))) * h.FiringRadius
+	bulletY := h.Y + float32(math.Sin(float64(h.FiringAngle))) * h.FiringRadius
 
-	// Create bullet from the arrow tip position
+	// Create bullet from the circle edge position
 	bullet := NewBullet(bulletX, bulletY, targetX, targetY)
 	h.Bullets = append(h.Bullets, bullet)
+
+	// Trigger firing effect
+	h.FiringEffectTimer = 15 // Show effect for 15 frames (quarter second at 60fps)
 }
 
 // UpdateShooting handles the shooting timer and creates bullets when ready
@@ -967,4 +1005,29 @@ func (h *Human) GetBulletVisuals() []*canvas.Circle {
 		}
 	}
 	return visuals
+}
+
+// updateFiringCircle updates the position of the firing circle and effect
+func (h *Human) updateFiringCircle() {
+	if !h.IsActive {
+		return
+	}
+
+	// Update firing circle position (centered on human)
+	h.FiringCircle.Move(fyne.NewPos(h.X-h.FiringRadius, h.Y-h.FiringRadius))
+
+	// Update firing effect timer and visibility
+	if h.FiringEffectTimer > 0 {
+		h.FiringEffectTimer--
+
+		// Position firing effect at the firing angle on the circle edge
+		effectX := h.X + float32(math.Cos(float64(h.FiringAngle))) * h.FiringRadius
+		effectY := h.Y + float32(math.Sin(float64(h.FiringAngle))) * h.FiringRadius
+
+		effectSize := h.Size * 0.3
+		h.FiringEffect.Move(fyne.NewPos(effectX-effectSize/2, effectY-effectSize/2))
+		h.FiringEffect.Show()
+	} else {
+		h.FiringEffect.Hide()
+	}
 }

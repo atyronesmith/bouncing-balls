@@ -325,6 +325,7 @@ func (a *App) Run() {
 	a.content.Add(ball3.Text)
 
 	// Add human figure components (drawn programmatically with ball-tracking eyes)
+	a.content.Add(a.human.FiringCircle)   // Add firing circle first (behind human)
 	a.content.Add(a.human.Head)
 	a.content.Add(a.human.Body)
 	a.content.Add(a.human.LeftEye)
@@ -336,6 +337,7 @@ func (a *App) Run() {
 	a.content.Add(a.human.LeftLeg)
 	a.content.Add(a.human.RightLeg)
 	a.content.Add(a.human.DirectionArrow)
+	a.content.Add(a.human.FiringEffect)   // Add firing effect on top
 
 	// Add dragon figure components
 	dragonComponents := a.dragon.GetVisualComponents()
@@ -449,6 +451,8 @@ func (a *App) resetAll() {
 	a.human.LeftLeg.Show()
 	a.human.RightLeg.Show()
 	a.human.DirectionArrow.Show()
+	a.human.FiringCircle.Show()
+	a.human.FiringEffect.Show()
 	a.human.UpdatePosition()
 
 	// Reset dragon
