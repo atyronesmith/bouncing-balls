@@ -70,6 +70,18 @@ func (a *App) startAnimation() {
 					ball.Update()
 				}
 
+				// Update eyeball positions with human tracking (if human is active)
+				if a.human != nil && a.human.IsActive {
+					for _, ball := range a.balls {
+						ball.UpdatePositionWithHuman(a.human.X, a.human.Y)
+					}
+				} else {
+					// If no human, use default positioning
+					for _, ball := range a.balls {
+						ball.UpdatePosition()
+					}
+				}
+
 				// Check for ball-to-ball collisions
 				for i := 0; i < len(a.balls); i++ {
 					for j := i + 1; j < len(a.balls); j++ {
@@ -233,28 +245,38 @@ func (a *App) Run() {
 		}
 	}
 
-	// Add balls
-	a.content.Add(ball1.Circle)
-	a.content.Add(ball2.Circle)
-	a.content.Add(ball3.Circle)
+	// Add balls (eyeball background, iris, pupils, and bloodshot veins)
+	a.content.Add(ball1.Circle) // White eyeball background
+	// Add bloodshot veins for ball1
+	for _, vein := range ball1.BloodVeins {
+		a.content.Add(vein)
+	}
+	a.content.Add(ball1.Iris)   // Colored iris
+	a.content.Add(ball1.Pupil)  // Black pupil
+
+	a.content.Add(ball2.Circle) // White eyeball background
+	// Add bloodshot veins for ball2
+	for _, vein := range ball2.BloodVeins {
+		a.content.Add(vein)
+	}
+	a.content.Add(ball2.Iris)   // Colored iris
+	a.content.Add(ball2.Pupil)  // Black pupil
+
+	a.content.Add(ball3.Circle) // White eyeball background
+	// Add bloodshot veins for ball3
+	for _, vein := range ball3.BloodVeins {
+		a.content.Add(vein)
+	}
+	a.content.Add(ball3.Iris)   // Colored iris
+	a.content.Add(ball3.Pupil)  // Black pupil
 
 	// Add ball text labels
 	a.content.Add(ball1.Text)
 	a.content.Add(ball2.Text)
 	a.content.Add(ball3.Text)
 
-	// Add human figure components
-	a.content.Add(a.human.Head)
-	a.content.Add(a.human.Body)
-	a.content.Add(a.human.LeftArm)
-	a.content.Add(a.human.RightArm)
-	a.content.Add(a.human.LeftLeg)
-	a.content.Add(a.human.RightLeg)
-	// Add eyes (should be on top of head)
-	a.content.Add(a.human.LeftEye)
-	a.content.Add(a.human.RightEye)
-	a.content.Add(a.human.LeftPupil)
-	a.content.Add(a.human.RightPupil)
+	// Add human figure PNG image
+	a.content.Add(a.human.ImageContainer)
 
 	// Add dragon figure components
 	dragonComponents := a.dragon.GetVisualComponents()
@@ -347,17 +369,9 @@ func (a *App) resetAll() {
 	a.human.IsExploding = false
 	a.human.IsActive = true
 	a.human.RespawnTimer = 0
-	// Show human components
-	a.human.Head.Show()
-	a.human.Body.Show()
-	a.human.LeftArm.Show()
-	a.human.RightArm.Show()
-	a.human.LeftLeg.Show()
-	a.human.RightLeg.Show()
-	a.human.LeftEye.Show()
-	a.human.RightEye.Show()
-	a.human.LeftPupil.Show()
-	a.human.RightPupil.Show()
+	a.human.Rotation = 0 // Reset rotation
+	// Show human image container
+	a.human.ImageContainer.Show()
 	a.human.UpdatePosition()
 
 	// Reset dragon

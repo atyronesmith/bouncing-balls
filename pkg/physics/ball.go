@@ -14,7 +14,10 @@ type Ball struct {
 	X, Y       float32 // current position
 	VX, VY     float32 // velocity
 	Radius     float32 // ball radius
-	Circle     *canvas.Circle
+	Circle     *canvas.Circle // White eyeball background
+	Iris       *canvas.Circle // Colored iris (middle part)
+	Pupil      *canvas.Circle // Black pupil (center)
+	BloodVeins []*canvas.Line  // Red bloodshot veins
 	Text       *canvas.Text // AI LLM name label
 	LLMName    string       // AI LLM name
 	Bounds     fyne.Size    // animation bounds
@@ -76,7 +79,7 @@ func (b *Ball) updateTextSize() {
 	b.Text.TextSize = fontSize
 }
 
-// NewBall creates a new bouncing ball
+// NewBall creates a new bouncing ball that looks like an eyeball
 func NewBall() *Ball {
 	ball := &Ball{
 		X:       100,
@@ -97,29 +100,61 @@ func NewBall() *Ball {
 		IsExploding:        false,
 	}
 
-	// Create the visual circle with no stroke
+	// Create the eyeball background (white sclera)
 	ball.Circle = &canvas.Circle{
-		FillColor:   color.RGBA{R: 100, G: 150, B: 255, A: 255}, // Light blue
-		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 0},         // No stroke
-		StrokeWidth: 0,                                          // No stroke width
+		FillColor:   color.RGBA{R: 255, G: 255, B: 255, A: 255}, // White eyeball
+		StrokeColor: color.RGBA{R: 200, G: 200, B: 200, A: 255}, // Light gray border
+		StrokeWidth: 2,
 	}
 
-	// Create the text label for the AI LLM name
+	// Create the iris (colored middle part)
+	ball.Iris = &canvas.Circle{
+		FillColor:   color.RGBA{R: 100, G: 150, B: 255, A: 255}, // Blue iris
+		StrokeColor: color.RGBA{R: 70, G: 120, B: 200, A: 255},  // Darker blue border
+		StrokeWidth: 1,
+	}
+
+	// Create the pupil (black center)
+	ball.Pupil = &canvas.Circle{
+		FillColor:   color.RGBA{R: 0, G: 0, B: 0, A: 255},     // Black pupil
+		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 255},     // Black border
+		StrokeWidth: 0,
+	}
+
+	// Create bloodshot veins for realistic eyeball effect
+	ball.BloodVeins = make([]*canvas.Line, 6) // 6 blood vessels
+	for i := 0; i < 6; i++ {
+		vein := &canvas.Line{
+			StrokeColor: color.RGBA{R: 200, G: 50, B: 50, A: 180}, // Semi-transparent red
+			StrokeWidth: 1.5,
+		}
+		ball.BloodVeins[i] = vein
+	}
+
+	// Create the text label for the AI LLM name (smaller now to not interfere with eye)
 	ball.Text = &canvas.Text{
 		Text:      ball.LLMName,
-		Color:     color.RGBA{R: 255, G: 255, B: 255, A: 255}, // White text
+		Color:     color.RGBA{R: 0, G: 0, B: 0, A: 255}, // Black text for visibility on white
 		Alignment: fyne.TextAlignCenter,
 		TextStyle: fyne.TextStyle{Bold: true},
-		TextSize:  12, // Initial size, will be adjusted
+		TextSize:  8, // Smaller initial size for eyeball
 	}
 
 	// Set initial size and position
 	ball.Circle.Resize(fyne.NewSize(ball.Radius*2, ball.Radius*2))
 
+	// Size iris to be about 60% of the eyeball
+	irisSize := ball.Radius * 1.2 // 60% diameter
+	ball.Iris.Resize(fyne.NewSize(irisSize, irisSize))
+
+	// Size pupil to be about 30% of the eyeball
+	pupilSize := ball.Radius * 0.6 // 30% diameter
+	ball.Pupil.Resize(fyne.NewSize(pupilSize, pupilSize))
+
 	// Set font size to fit inside ball
 	ball.updateTextSize()
 
-	ball.updatePosition()
+	ball.UpdatePosition()
 
 	// Initialize particle trail
 	ball.initializeTrail()
@@ -183,8 +218,13 @@ func (b *Ball) updateTrail() {
 	b.TrailIndex = (b.TrailIndex + 1) % len(b.Trail)
 }
 
-// updatePosition updates the visual position of the circle and text
-func (b *Ball) updatePosition() {
+// UpdatePosition updates the visual position of the eyeball components
+func (b *Ball) UpdatePosition() {
+	b.UpdatePositionWithHuman(0, 0) // Default position when no human tracking
+}
+
+// UpdatePositionWithHuman updates the visual position of the eyeball components with human tracking
+func (b *Ball) UpdatePositionWithHuman(humanX, humanY float32) {
 	// Apply jiggle effect to radius
 	currentRadius := b.OriginalRadius
 	if b.JiggleAmplitude > 0.01 { // Only apply jiggle if amplitude is significant
@@ -203,17 +243,45 @@ func (b *Ball) updatePosition() {
 		}
 	}
 
-	// Update visual radius and position
+	// Update visual radius and position for eyeball background
 	b.Radius = currentRadius
 	b.Circle.Resize(fyne.NewSize(currentRadius*2, currentRadius*2))
 	b.Circle.Move(fyne.NewPos(b.X-currentRadius, b.Y-currentRadius))
 
-	// Update text position to center on ball
+	// Calculate direction to human for iris tracking
+	var irisOffsetX, irisOffsetY float32
+	if humanX != 0 || humanY != 0 { // If human position is provided
+		dx := humanX - b.X
+		dy := humanY - b.Y
+		distance := float32(math.Sqrt(float64(dx*dx + dy*dy)))
+
+		if distance > 0 {
+			// Normalize direction and apply offset (iris can move within the eyeball)
+			maxOffset := currentRadius * 0.25 // Maximum iris offset from center
+			irisOffsetX = (dx / distance) * maxOffset
+			irisOffsetY = (dy / distance) * maxOffset
+		}
+	}
+
+	// Update iris position and size (60% of eyeball) with human tracking
+	irisRadius := currentRadius * 0.6
+	b.Iris.Resize(fyne.NewSize(irisRadius*2, irisRadius*2))
+	b.Iris.Move(fyne.NewPos(b.X-irisRadius+irisOffsetX, b.Y-irisRadius+irisOffsetY))
+
+	// Update pupil position and size (30% of eyeball) - follows iris
+	pupilRadius := currentRadius * 0.3
+	b.Pupil.Resize(fyne.NewSize(pupilRadius*2, pupilRadius*2))
+	b.Pupil.Move(fyne.NewPos(b.X-pupilRadius+irisOffsetX, b.Y-pupilRadius+irisOffsetY))
+
+	// Update bloodshot veins position
+	b.updateBloodVeins(currentRadius)
+
+	// Update text position to be at the bottom of the eyeball (outside the eye)
 	if b.Text != nil {
 		textSize := b.Text.MinSize()
-		// Position text so its center aligns with ball center
+		// Position text below the eyeball
 		textX := b.X - textSize.Width/2
-		textY := b.Y - textSize.Height/2
+		textY := b.Y + currentRadius + 5 // 5 pixels below the eyeball
 		b.Text.Move(fyne.NewPos(textX, textY))
 		// Set text size to match its content
 		b.Text.Resize(textSize)
@@ -221,6 +289,30 @@ func (b *Ball) updatePosition() {
 
 	// Update trail
 	b.updateTrail()
+}
+
+// updateBloodVeins positions the bloodshot veins around the eyeball
+func (b *Ball) updateBloodVeins(radius float32) {
+	for i, vein := range b.BloodVeins {
+		if vein != nil {
+			// Create random-looking veins radiating from different points
+			angle := float64(i) * math.Pi / 3.0 // 60 degree intervals
+
+			// Start point (closer to edge of eyeball)
+			startRadius := radius * 0.7
+			startX := b.X + float32(math.Cos(angle))*startRadius
+			startY := b.Y + float32(math.Sin(angle))*startRadius
+
+			// End point (towards center but not reaching iris)
+			endRadius := radius * 0.3
+			endX := b.X + float32(math.Cos(angle+0.5))*endRadius // Slight curve
+			endY := b.Y + float32(math.Sin(angle+0.5))*endRadius
+
+			// Set the line position
+			vein.Position1 = fyne.NewPos(startX, startY)
+			vein.Position2 = fyne.NewPos(endX, endY)
+		}
+	}
 }
 
 // Update calculates the next position and handles wall bouncing
@@ -264,7 +356,7 @@ func (b *Ball) Update() {
 		}
 	}
 
-	b.updatePosition()
+	b.UpdatePosition()
 
 	// Update explosion effects
 	if b.IsExploding {
@@ -376,24 +468,29 @@ func (b *Ball) HandleCollision(other *Ball) {
 	other.shrinkBall(0.8)
 }
 
-// ChangeColor cycles through different colors
+// ChangeColor cycles through different iris colors for the eyeball
 func (b *Ball) ChangeColor() {
-	switch b.Circle.FillColor {
-	case color.RGBA{R: 100, G: 150, B: 255, A: 255}: // Light blue
-		b.Circle.FillColor = color.RGBA{R: 255, G: 100, B: 100, A: 255} // Light red
-	case color.RGBA{R: 255, G: 100, B: 100, A: 255}: // Light red
-		b.Circle.FillColor = color.RGBA{R: 100, G: 255, B: 100, A: 255} // Light green
-	case color.RGBA{R: 100, G: 255, B: 100, A: 255}: // Light green
-		b.Circle.FillColor = color.RGBA{R: 255, G: 255, B: 100, A: 255} // Light yellow
-	case color.RGBA{R: 255, G: 255, B: 100, A: 255}: // Light yellow
-		b.Circle.FillColor = color.RGBA{R: 255, G: 100, B: 255, A: 255} // Pink
+	switch b.Iris.FillColor {
+	case color.RGBA{R: 100, G: 150, B: 255, A: 255}: // Blue iris
+		b.Iris.FillColor = color.RGBA{R: 100, G: 255, B: 100, A: 255} // Green iris
+		b.Iris.StrokeColor = color.RGBA{R: 70, G: 200, B: 70, A: 255}
+	case color.RGBA{R: 100, G: 255, B: 100, A: 255}: // Green iris
+		b.Iris.FillColor = color.RGBA{R: 139, G: 69, B: 19, A: 255} // Brown iris
+		b.Iris.StrokeColor = color.RGBA{R: 110, G: 50, B: 15, A: 255}
+	case color.RGBA{R: 139, G: 69, B: 19, A: 255}: // Brown iris
+		b.Iris.FillColor = color.RGBA{R: 128, G: 128, B: 128, A: 255} // Gray iris
+		b.Iris.StrokeColor = color.RGBA{R: 100, G: 100, B: 100, A: 255}
+	case color.RGBA{R: 128, G: 128, B: 128, A: 255}: // Gray iris
+		b.Iris.FillColor = color.RGBA{R: 255, G: 140, B: 0, A: 255} // Orange iris
+		b.Iris.StrokeColor = color.RGBA{R: 200, G: 110, B: 0, A: 255}
 	default:
-		b.Circle.FillColor = color.RGBA{R: 100, G: 150, B: 255, A: 255} // Back to light blue
+		b.Iris.FillColor = color.RGBA{R: 100, G: 150, B: 255, A: 255} // Back to blue iris
+		b.Iris.StrokeColor = color.RGBA{R: 70, G: 120, B: 200, A: 255}
 	}
-	b.Circle.Refresh()
+	b.Iris.Refresh()
 }
 
-// NewCustomBall creates a ball with custom properties
+// NewCustomBall creates a ball with custom properties that looks like an eyeball
 func NewCustomBall(x, y, vx, vy, radius float32, fillColor, strokeColor color.RGBA) *Ball {
 	ball := &Ball{
 		X:       x,
@@ -414,29 +511,61 @@ func NewCustomBall(x, y, vx, vy, radius float32, fillColor, strokeColor color.RG
 		IsExploding:        false,
 	}
 
-	// Create the visual circle with no stroke (ignoring strokeColor parameter)
+	// Create the eyeball background (white sclera)
 	ball.Circle = &canvas.Circle{
-		FillColor:   fillColor,
-		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 0}, // No stroke
-		StrokeWidth: 0,                                  // No stroke width
+		FillColor:   color.RGBA{R: 255, G: 255, B: 255, A: 255}, // White eyeball
+		StrokeColor: color.RGBA{R: 200, G: 200, B: 200, A: 255}, // Light gray border
+		StrokeWidth: 2,
 	}
 
-	// Create the text label for the AI LLM name
+	// Create the iris (use the fillColor parameter for iris color)
+	ball.Iris = &canvas.Circle{
+		FillColor:   fillColor, // Use the provided color for the iris
+		StrokeColor: strokeColor, // Use the provided stroke color for iris border
+		StrokeWidth: 1,
+	}
+
+	// Create the pupil (black center)
+	ball.Pupil = &canvas.Circle{
+		FillColor:   color.RGBA{R: 0, G: 0, B: 0, A: 255},     // Black pupil
+		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 255},     // Black border
+		StrokeWidth: 0,
+	}
+
+	// Create bloodshot veins for realistic eyeball effect
+	ball.BloodVeins = make([]*canvas.Line, 6) // 6 blood vessels
+	for i := 0; i < 6; i++ {
+		vein := &canvas.Line{
+			StrokeColor: color.RGBA{R: 200, G: 50, B: 50, A: 180}, // Semi-transparent red
+			StrokeWidth: 1.5,
+		}
+		ball.BloodVeins[i] = vein
+	}
+
+	// Create the text label for the AI LLM name (smaller now to not interfere with eye)
 	ball.Text = &canvas.Text{
 		Text:      ball.LLMName,
-		Color:     color.RGBA{R: 255, G: 255, B: 255, A: 255}, // White text
+		Color:     color.RGBA{R: 0, G: 0, B: 0, A: 255}, // Black text for visibility on white
 		Alignment: fyne.TextAlignCenter,
 		TextStyle: fyne.TextStyle{Bold: true},
-		TextSize:  12, // Initial size, will be adjusted
+		TextSize:  8, // Smaller initial size for eyeball
 	}
 
 	// Set initial size and position
 	ball.Circle.Resize(fyne.NewSize(ball.Radius*2, ball.Radius*2))
 
+	// Size iris to be about 60% of the eyeball
+	irisSize := ball.Radius * 1.2 // 60% diameter
+	ball.Iris.Resize(fyne.NewSize(irisSize, irisSize))
+
+	// Size pupil to be about 30% of the eyeball
+	pupilSize := ball.Radius * 0.6 // 30% diameter
+	ball.Pupil.Resize(fyne.NewSize(pupilSize, pupilSize))
+
 	// Set font size to fit inside ball
 	ball.updateTextSize()
 
-	ball.updatePosition()
+	ball.UpdatePosition()
 
 	// Initialize particle trail
 	ball.initializeTrail()
@@ -529,7 +658,7 @@ func (b *Ball) UpdateExplosion() {
 	}
 }
 
-// shrinkBall reduces the ball size by the given factor
+// shrinkBall reduces the eyeball size by the given factor
 func (b *Ball) shrinkBall(factor float32) {
 	// Calculate new size
 	newRadius := b.Radius * factor
@@ -555,8 +684,16 @@ func (b *Ball) shrinkBall(factor float32) {
 		b.Radius = newRadius
 		b.OriginalRadius = newOriginalRadius
 
-		// Update visual size
+		// Update visual size for all eyeball components
 		b.Circle.Resize(fyne.NewSize(b.Radius*2, b.Radius*2))
+
+		// Update iris size (60% of eyeball)
+		irisSize := b.Radius * 1.2
+		b.Iris.Resize(fyne.NewSize(irisSize, irisSize))
+
+		// Update pupil size (30% of eyeball)
+		pupilSize := b.Radius * 0.6
+		b.Pupil.Resize(fyne.NewSize(pupilSize, pupilSize))
 
 		// Adjust text size for new ball size
 		b.updateTextSize()
