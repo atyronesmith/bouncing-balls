@@ -18,6 +18,7 @@ type App struct {
 	balls           []*physics.Ball
 	human           *physics.Human
 	dragon          *physics.Dragon
+	starField       *physics.StarField // Moving star field background
 	currentBounds   fyne.Size
 	animationTicker *time.Ticker
 	content         *fyne.Container // Main content container for dynamic elements
@@ -49,6 +50,11 @@ func (a *App) updateBounds(newSize fyne.Size) {
 	if a.dragon != nil {
 		a.dragon.Bounds = newSize
 	}
+
+	// Update bounds for star field
+	if a.starField != nil {
+		a.starField.UpdateBounds(newSize)
+	}
 }
 
 // startAnimation starts the animation loop - simplified version
@@ -65,6 +71,11 @@ func (a *App) startAnimation() {
 		for {
 			select {
 			case <-a.animationTicker.C:
+				// Update star field (background animation)
+				if a.starField != nil {
+					a.starField.Update()
+				}
+
 				// Update all ball positions (wall bouncing)
 				for _, ball := range a.balls {
 					ball.Update()
@@ -151,29 +162,32 @@ func (a *App) startAnimation() {
 						}
 					}
 
-					// Always update explosion state (handles respawn timer and animation)
-					if a.human.IsExploding {
-						// Store explosion particles before update (for cleanup)
-						particlesBeforeUpdate := a.human.ExplosionParticles
-						wasExploding := a.human.IsExploding
+													// Always update explosion state (handles respawn timer and animation)
+				if a.human.IsExploding {
+					// Store explosion particles before update (for cleanup)
+					particlesBeforeUpdate := a.human.ExplosionParticles
+					wasExploding := a.human.IsExploding
 
-						a.human.UpdateExplosion()
+					a.human.UpdateExplosion()
 
-						// If explosion just ended (respawn happened), clean up particles from UI
-						if wasExploding && !a.human.IsExploding {
-							// Remove explosion particles from UI
-							for _, particle := range particlesBeforeUpdate {
-								if particle != nil {
-									a.content.Remove(particle)
-								}
+					// If explosion just ended (respawn happened), use strategic respawn and clean up particles
+					if wasExploding && !a.human.IsExploding {
+						// Use strategic respawn with ball positions
+						a.human.RespawnWithBalls(a.balls)
+
+						// Remove explosion particles from UI
+						for _, particle := range particlesBeforeUpdate {
+							if particle != nil {
+								a.content.Remove(particle)
 							}
 						}
 					}
 				}
+				}
 
-				// Update dragon if active
+				// Update dragon if active (now protects the human)
 				if a.dragon != nil && a.dragon.IsActive {
-					a.dragon.Update(a.balls)
+					a.dragon.Update(a.balls, a.human)
 					a.dragon.UpdatePosition()
 				}
 			}
@@ -186,15 +200,15 @@ func (a *App) Run() {
 	a.fyneApp.SetIcon(nil)
 
 	// Create a fixed size window
-	a.window = a.fyneApp.NewWindow("Bouncing Balls - Fixed Size (800x600)")
+	a.window = a.fyneApp.NewWindow("🚀 Eyeball Space Travel Simulator - Flying Through the Galaxy! (800x600)")
 	a.window.Resize(a.currentBounds)
 	a.window.CenterOnScreen()
 	a.window.SetFixedSize(true) // Make window non-resizable
 
-	// Create three bouncing balls with different properties
+	// Create three bouncing balls with slower, more controlled velocities
 	ball1 := physics.NewCustomBall(
 		100, 100, // position
-		3.5, 2.8, // velocity
+		1.5, 1.2, // slower velocity (was 3.5, 2.8)
 		30, // radius
 		color.RGBA{R: 100, G: 150, B: 255, A: 255}, // Light blue fill
 		color.RGBA{R: 255, G: 50, B: 50, A: 255},   // Red stroke
@@ -202,7 +216,7 @@ func (a *App) Run() {
 
 	ball2 := physics.NewCustomBall(
 		300, 200, // different starting position
-		-2.8, 4.2, // different velocity (negative x for opposite direction)
+		-1.2, 1.8, // slower velocity (was -2.8, 4.2)
 		25, // smaller radius
 		color.RGBA{R: 255, G: 100, B: 100, A: 255}, // Light red fill
 		color.RGBA{R: 50, G: 255, B: 50, A: 255},   // Green stroke
@@ -210,7 +224,7 @@ func (a *App) Run() {
 
 	ball3 := physics.NewCustomBall(
 		500, 150, // different starting position
-		-4.1, -3.3, // different velocity (both negative)
+		-1.8, -1.4, // slower velocity (was -4.1, -3.3)
 		35, // larger radius
 		color.RGBA{R: 100, G: 255, B: 100, A: 255}, // Light green fill
 		color.RGBA{R: 100, G: 50, B: 255, A: 255},  // Blue stroke
@@ -225,11 +239,14 @@ func (a *App) Run() {
 	// Create the dragon
 	a.dragon = physics.NewDragon(200, 200, 40)
 
+	// Create realistic star field background with galactic distribution
+	a.starField = physics.NewStarField(400, a.currentBounds) // 400 stars for better realistic distribution
+
 	// Update bounds for all objects
 	a.updateBounds(a.currentBounds)
 
 	// Create instruction label
-	label := widget.NewLabel("⚡ Bouncing Balls - Fixed Size Window (Non-Resizable)")
+	label := widget.NewLabel("🚀 Space Travel Simulator - Flying through a realistic galaxy with parallax star movement!")
 	label.Alignment = fyne.TextAlignCenter
 
 	// Create UI controls
@@ -237,6 +254,11 @@ func (a *App) Run() {
 
 	// Create the main container
 	a.content = container.NewWithoutLayout()
+
+	// Add star field to background (first layer)
+	for _, star := range a.starField.GetVisuals() {
+		a.content.Add(star)
+	}
 
 	// Add ball trails to container
 	for _, ball := range a.balls {
@@ -342,21 +364,21 @@ func (a *App) createControls() *fyne.Container {
 
 // resetAll resets all objects to their initial state
 func (a *App) resetAll() {
-	// Reset ball positions and velocities
+	// Reset ball positions and velocities (slower speeds)
 	a.balls[0].X = 100
 	a.balls[0].Y = 100
-	a.balls[0].VX = 3.5
-	a.balls[0].VY = 2.8
+	a.balls[0].VX = 1.5
+	a.balls[0].VY = 1.2
 
 	a.balls[1].X = 300
 	a.balls[1].Y = 200
-	a.balls[1].VX = -2.8
-	a.balls[1].VY = 4.2
+	a.balls[1].VX = -1.2
+	a.balls[1].VY = 1.8
 
 	a.balls[2].X = 500
 	a.balls[2].Y = 150
-	a.balls[2].VX = -4.1
-	a.balls[2].VY = -3.3
+	a.balls[2].VX = -1.8
+	a.balls[2].VY = -1.4
 
 	// Update ball visual positions
 	for _, ball := range a.balls {

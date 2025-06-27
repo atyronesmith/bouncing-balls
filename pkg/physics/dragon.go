@@ -8,22 +8,28 @@ import (
 	"fyne.io/fyne/v2/canvas"
 )
 
-// Dragon represents a dragon that chases the biggest ball but never catches it
+// Dragon represents a dragon that protects the human by following them and deflecting balls
 type Dragon struct {
 	X, Y          float32   // current position
-	VX, VY        float32   // velocity for bouncing and drifting
+	VX, VY        float32   // velocity for bouncing and movement
 	Size          float32   // size of the dragon
+	Mass          float32   // mass for collision physics (twice the largest ball)
 	Speed         float32   // movement speed
-	MinDistance   float32   // minimum distance to maintain from target
-	ChaseDistance float32   // distance at which dragon starts chasing
+	FollowDistance float32  // preferred distance to maintain from human
+	ProtectRadius  float32  // radius within which dragon will intercept balls
 	Bounds        fyne.Size // movement bounds
 	IsActive      bool      // whether the dragon is active
+	// Human movement tracking for strategic deflection
+	LastHumanX    float32 // previous human X position
+	LastHumanY    float32 // previous human Y position
+	HumanVX       float32 // calculated human velocity X
+	HumanVY       float32 // calculated human velocity Y
 	// Collision and drift state
 	IsDrifting    bool // whether dragon is currently drifting after collision
 	DriftTimer    int  // frames remaining in drift mode
 	DriftDuration int  // total frames to drift
 	// Spinning animation state
-	IsSpinning bool    // whether dragon is spinning while resuming chase
+	IsSpinning bool    // whether dragon is spinning while resuming follow
 	SpinAngle  float32 // current spin angle
 	SpinCount  int     // number of spins completed
 	SpinTarget int     // target number of spins (4)
@@ -41,7 +47,7 @@ type Dragon struct {
 	FlameTimer     int
 }
 
-// NewDragon creates a new dragon figure
+// NewDragon creates a new dragon figure that protects the human
 func NewDragon(x, y, size float32) *Dragon {
 	dragon := &Dragon{
 		X:             x,
@@ -49,13 +55,19 @@ func NewDragon(x, y, size float32) *Dragon {
 		VX:            0,
 		VY:            0,
 		Size:          size,
-		Speed:         3.0,   // Fast enough to chase but not too fast
-		MinDistance:   60.0,  // Never gets closer than this to the target
-		ChaseDistance: 400.0, // Increased from 200.0 - Starts chasing when within this distance
+		Mass:          70.0,  // Will be updated to twice the largest ball mass
+		Speed:         2.0,   // Slower, more controlled movement
+		FollowDistance: 80.0, // Preferred distance from human
+		ProtectRadius:  150.0, // Will intercept balls within this radius of human
 		Bounds:        fyne.NewSize(800, 600),
 		IsActive:      true,
-		DriftDuration: 120, // 2 seconds at 60 FPS
-		SpinTarget:    4,   // Spin 4 times when resuming chase
+		// Initialize human tracking
+		LastHumanX:    x, // Initialize with dragon's starting position
+		LastHumanY:    y,
+		HumanVX:       0,
+		HumanVY:       0,
+		DriftDuration: 60, // Shorter drift duration for more responsive protection
+		SpinTarget:    2,  // Fewer spins for faster recovery
 	}
 
 	// Dragon colors
@@ -137,26 +149,116 @@ func NewDragon(x, y, size float32) *Dragon {
 	return dragon
 }
 
-// FindBiggestBall finds the ball with the largest radius
-func (d *Dragon) FindBiggestBall(balls []*Ball) *Ball {
+// FindLargestBall finds the ball with the largest radius to calculate dragon mass
+func (d *Dragon) FindLargestBall(balls []*Ball) *Ball {
 	if len(balls) == 0 {
 		return nil
 	}
 
-	var biggestBall *Ball
+	var largestBall *Ball
 	maxRadius := float32(0)
 
 	for _, ball := range balls {
 		if ball.Radius > maxRadius {
 			maxRadius = ball.Radius
-			biggestBall = ball
+			largestBall = ball
 		}
 	}
 
-	return biggestBall
+	return largestBall
 }
 
-// CheckCollisionWithBalls checks if dragon collides with any ball
+// UpdateMass updates dragon mass to be twice the largest ball's mass
+func (d *Dragon) UpdateMass(balls []*Ball) {
+	largestBall := d.FindLargestBall(balls)
+	if largestBall != nil {
+		// Calculate ball mass based on area (π * r²) and assume unit density
+		ballMass := math.Pi * float64(largestBall.Radius) * float64(largestBall.Radius)
+		d.Mass = float32(ballMass) * 2.0 // Dragon has twice the mass of largest ball
+
+		// Ensure minimum mass for dragon effectiveness
+		minMass := float32(1000.0)
+		if d.Mass < minMass {
+			d.Mass = minMass
+		}
+	}
+}
+
+// updateHumanVelocity tracks human movement to predict movement direction
+func (d *Dragon) updateHumanVelocity(human *Human) {
+	if human == nil || !human.IsActive {
+		d.HumanVX = 0
+		d.HumanVY = 0
+		return
+	}
+
+	// Calculate human velocity from position change
+	d.HumanVX = human.X - d.LastHumanX
+	d.HumanVY = human.Y - d.LastHumanY
+
+	// Store current position for next frame
+	d.LastHumanX = human.X
+	d.LastHumanY = human.Y
+}
+
+// FindThreateningBalls finds balls that are moving toward the human and within protect radius
+func (d *Dragon) FindThreateningBalls(balls []*Ball, human *Human) []*Ball {
+	if human == nil || !human.IsActive {
+		return nil
+	}
+
+	var threateningBalls []*Ball
+
+	for _, ball := range balls {
+		if !ball.IsAnimated {
+			continue
+		}
+
+		// Calculate distance from ball to human
+		dx := human.X - ball.X
+		dy := human.Y - ball.Y
+		distanceToHuman := float32(math.Sqrt(float64(dx*dx + dy*dy)))
+
+		// Only consider balls within protect radius
+		if distanceToHuman > d.ProtectRadius {
+			continue
+		}
+
+		// Check if ball is moving toward human
+		// Calculate dot product of ball velocity and direction to human
+		dotProduct := ball.VX*dx + ball.VY*dy
+		if dotProduct > 0 { // Ball is moving toward human
+			threateningBalls = append(threateningBalls, ball)
+		}
+	}
+
+	return threateningBalls
+}
+
+// FindClosestThreat finds the closest threatening ball to intercept
+func (d *Dragon) FindClosestThreat(threateningBalls []*Ball) *Ball {
+	if len(threateningBalls) == 0 {
+		return nil
+	}
+
+	var closestBall *Ball
+	minDistance := float32(math.Inf(1))
+
+	for _, ball := range threateningBalls {
+		dx := ball.X - d.X
+		dy := ball.Y - d.Y
+		distance := float32(math.Sqrt(float64(dx*dx + dy*dy)))
+
+		if distance < minDistance {
+			minDistance = distance
+			closestBall = ball
+		}
+	}
+
+	return closestBall
+}
+
+// CheckCollisionWithBalls checks if dragon collides with any ball and handles deflection
 func (d *Dragon) CheckCollisionWithBalls(balls []*Ball) *Ball {
 	if !d.IsActive {
 		return nil
@@ -173,7 +275,7 @@ func (d *Dragon) CheckCollisionWithBalls(balls []*Ball) *Ball {
 		distance := float32(math.Sqrt(float64(dx*dx + dy*dy)))
 
 		// Check if collision occurs (dragon size/2 + ball radius)
-		collisionDistance := d.Size*0.4 + ball.Radius // Dragon collision radius is smaller than visual size
+		collisionDistance := d.Size*0.4 + ball.Radius
 		if distance < collisionDistance {
 			return ball
 		}
@@ -182,42 +284,105 @@ func (d *Dragon) CheckCollisionWithBalls(balls []*Ball) *Ball {
 	return nil
 }
 
-// HandleBallCollision handles collision with a ball and starts drifting
-func (d *Dragon) HandleBallCollision(ball *Ball) {
+// HandleBallCollision handles collision with a ball using mass-based physics to deflect it
+func (d *Dragon) HandleBallCollision(ball *Ball, human *Human) {
 	// Calculate collision direction
 	dx := d.X - ball.X
 	dy := d.Y - ball.Y
 	distance := float32(math.Sqrt(float64(dx*dx + dy*dy)))
 
-	if distance > 0 {
+	if distance > 0 && human != nil {
 		// Normalize collision direction
 		normalizedDx := dx / distance
 		normalizedDy := dy / distance
 
-		// Set drift velocity (bounce away from ball)
-		bounceSpeed := d.Speed * 1.5 // Bounce away faster than normal movement
-		d.VX = normalizedDx * bounceSpeed
-		d.VY = normalizedDy * bounceSpeed
+		// Calculate ball mass (assuming unit density)
+		ballMass := math.Pi * float64(ball.Radius) * float64(ball.Radius)
 
-		// Enter drift mode
+				// Calculate collision impulse
+		relativeVX := d.VX - ball.VX
+		relativeVY := d.VY - ball.VY
+		relativeSpeed := relativeVX*normalizedDx + relativeVY*normalizedDy
+
+		// Collision impulse magnitude
+		impulse := 2.0 * relativeSpeed / (1.0 + float32(ballMass)/d.Mass)
+
+		// Apply impulse to ball (dragon deflects ball strategically)
+		// Calculate direction opposite to human's movement for strategic deflection
+		var deflectDx, deflectDy float32
+
+		// Check if human is moving (velocity magnitude > threshold)
+		humanSpeed := float32(math.Sqrt(float64(d.HumanVX*d.HumanVX + d.HumanVY*d.HumanVY)))
+
+		if humanSpeed > 0.5 { // Human is moving significantly
+			// Deflect ball in opposite direction of human movement
+			deflectDx = -d.HumanVX / humanSpeed // Opposite of human movement X
+			deflectDy = -d.HumanVY / humanSpeed // Opposite of human movement Y
+		} else {
+			// Human is stationary or moving slowly, deflect away from human
+			humanDx := ball.X - human.X
+			humanDy := ball.Y - human.Y
+			humanDistance := float32(math.Sqrt(float64(humanDx*humanDx + humanDy*humanDy)))
+
+			if humanDistance > 0 {
+				deflectDx = humanDx / humanDistance
+				deflectDy = humanDy / humanDistance
+			}
+		}
+
+		// Combine collision direction with strategic deflection direction
+		finalDx := (normalizedDx + deflectDx) * 0.5
+		finalDy := (normalizedDy + deflectDy) * 0.5
+		finalDistance := float32(math.Sqrt(float64(finalDx*finalDx + finalDy*finalDy)))
+
+		if finalDistance > 0 {
+			finalDx /= finalDistance
+			finalDy /= finalDistance
+
+			// Apply deflection to ball (reduced strength for more control)
+			deflectionStrength := impulse * 0.8 // Moderate deflection
+			ball.VX += finalDx * deflectionStrength
+			ball.VY += finalDy * deflectionStrength
+		}
+
+		// Shrink the ball by half and trigger jiggle effect
+		ball.shrinkBall(0.5) // Shrink to half size (including mass)
+		ball.triggerJiggle(0.5) // Add satisfying jiggle effect
+
+		// Reduce ball's velocity by half to make it less threatening
+		ball.VX *= 0.5 // Half the X velocity
+		ball.VY *= 0.5 // Half the Y velocity
+
+		// Dragon bounces back slightly (less due to higher mass)
+		dragonBounce := impulse * float32(ballMass) / d.Mass * 0.3
+		d.VX -= normalizedDx * dragonBounce
+		d.VY -= normalizedDy * dragonBounce
+
+		// Enter brief drift mode
 		d.IsDrifting = true
-		d.DriftTimer = d.DriftDuration
+		d.DriftTimer = d.DriftDuration / 2 // Shorter drift for responsiveness
 		d.IsSpinning = false
 		d.SpinAngle = 0
 		d.SpinCount = 0
 	}
 }
 
-// Update handles all dragon behavior including drifting, spinning, and chasing
-func (d *Dragon) Update(balls []*Ball) {
+// Update handles all dragon behavior including following human and protecting them
+func (d *Dragon) Update(balls []*Ball, human *Human) {
 	if !d.IsActive {
 		return
 	}
 
+	// Update human movement tracking for strategic deflection
+	d.updateHumanVelocity(human)
+
+	// Update mass based on current largest ball
+	d.UpdateMass(balls)
+
 	// Check for collisions with balls (only when not already drifting)
 	if !d.IsDrifting {
 		if collidedBall := d.CheckCollisionWithBalls(balls); collidedBall != nil {
-			d.HandleBallCollision(collidedBall)
+			d.HandleBallCollision(collidedBall, human)
 		}
 	}
 
@@ -227,7 +392,7 @@ func (d *Dragon) Update(balls []*Ball) {
 	} else if d.IsSpinning {
 		d.updateSpinning()
 	} else {
-		d.updateChasing(balls)
+		d.updateProtecting(balls, human)
 	}
 
 	// Apply movement
@@ -246,25 +411,25 @@ func (d *Dragon) updateDrifting() {
 	d.DriftTimer--
 
 	// Apply friction to slow down drifting
-	d.VX *= 0.98
-	d.VY *= 0.98
+	d.VX *= 0.95 // Less friction for more responsive recovery
+	d.VY *= 0.95
 
 	// Check if drift time is over
 	if d.DriftTimer <= 0 {
 		d.IsDrifting = false
 		d.VX = 0
 		d.VY = 0
-		// Start spinning animation before resuming chase
+		// Start brief spinning animation before resuming protection
 		d.IsSpinning = true
 		d.SpinAngle = 0
 		d.SpinCount = 0
 	}
 }
 
-// updateSpinning handles spinning animation when resuming chase
+// updateSpinning handles spinning animation when resuming protection
 func (d *Dragon) updateSpinning() {
-	// Spin speed - complete one rotation in about 15 frames
-	spinSpeed := float32(2 * math.Pi / 15)
+	// Faster spin speed for quicker recovery
+	spinSpeed := float32(2 * math.Pi / 10)
 	d.SpinAngle += spinSpeed
 
 	// Check if completed a full rotation
@@ -281,55 +446,74 @@ func (d *Dragon) updateSpinning() {
 	}
 }
 
-// updateChasing handles normal chasing behavior
-func (d *Dragon) updateChasing(balls []*Ball) {
-	biggestBall := d.FindBiggestBall(balls)
-	if biggestBall == nil || !biggestBall.IsAnimated {
+// updateProtecting handles protective behavior - following human and intercepting threats
+func (d *Dragon) updateProtecting(balls []*Ball, human *Human) {
+	if human == nil || !human.IsActive {
 		d.VX = 0
 		d.VY = 0
 		return
 	}
 
-	// Calculate distance to the biggest ball
-	dx := biggestBall.X - d.X
-	dy := biggestBall.Y - d.Y
+	// Find threatening balls
+	threateningBalls := d.FindThreateningBalls(balls, human)
+	closestThreat := d.FindClosestThreat(threateningBalls)
+
+	if closestThreat != nil {
+		// Priority: Intercept the closest threat
+		d.interceptBall(closestThreat, human)
+	} else {
+		// No immediate threats: Follow the human at preferred distance
+		d.followHuman(human)
+	}
+}
+
+// interceptBall moves dragon to intercept a threatening ball
+func (d *Dragon) interceptBall(ball *Ball, human *Human) {
+	// Calculate interception point
+	// Predict where the ball will be when dragon reaches it
+	dx := ball.X - d.X
+	dy := ball.Y - d.Y
 	distance := float32(math.Sqrt(float64(dx*dx + dy*dy)))
 
-	// Only chase if the ball is within chase distance
-	if distance > d.ChaseDistance {
-		d.VX = 0
-		d.VY = 0
-		return
+	if distance > 0 {
+		// Simple interception: move toward ball's current position aggressively
+		normalizedDx := dx / distance
+		normalizedDy := dy / distance
+
+		// Move at controlled speed toward threat
+		d.VX = normalizedDx * d.Speed * 1.2 // 1.2x speed when intercepting (was 1.5x)
+		d.VY = normalizedDy * d.Speed * 1.2
 	}
+}
 
-	// Calculate desired movement (maintain minimum distance)
-	if distance > d.MinDistance {
-		// Move towards the ball
+// followHuman makes dragon follow the human at preferred distance
+func (d *Dragon) followHuman(human *Human) {
+	// Calculate distance to human
+	dx := human.X - d.X
+	dy := human.Y - d.Y
+	distance := float32(math.Sqrt(float64(dx*dx + dy*dy)))
+
+	if distance > 0 {
 		normalizedDx := dx / distance
 		normalizedDy := dy / distance
 
-		// Calculate target position that maintains minimum distance
-		targetDistance := d.MinDistance + 10 // Add small buffer
-		if distance > targetDistance {
-			moveDistance := (distance - targetDistance) * 0.8 // Gradual approach
-			if moveDistance > d.Speed {
-				moveDistance = d.Speed
+		if distance > d.FollowDistance+20 {
+			// Too far: Move closer to human
+			moveSpeed := (distance - d.FollowDistance) * 0.1 // Gradual approach
+			if moveSpeed > d.Speed {
+				moveSpeed = d.Speed
 			}
-
-			d.VX = normalizedDx * moveDistance
-			d.VY = normalizedDy * moveDistance
+			d.VX = normalizedDx * moveSpeed
+			d.VY = normalizedDy * moveSpeed
+		} else if distance < d.FollowDistance-20 {
+			// Too close: Back away slightly
+			d.VX = -normalizedDx * d.Speed * 0.3
+			d.VY = -normalizedDy * d.Speed * 0.3
 		} else {
-			d.VX = 0
-			d.VY = 0
+			// Good distance: Maintain position with slight drift
+			d.VX *= 0.9
+			d.VY *= 0.9
 		}
-	} else {
-		// Too close! Back away while still facing the ball
-		normalizedDx := dx / distance
-		normalizedDy := dy / distance
-
-		// Move away from the ball
-		d.VX = -normalizedDx * d.Speed * 0.5
-		d.VY = -normalizedDy * d.Speed * 0.5
 	}
 }
 

@@ -478,9 +478,9 @@ func (h *Human) UpdateExplosion() {
 	}
 }
 
-// Respawn brings the human back to life at a safe location
+// Respawn brings the human back to life at a safe location (fallback method)
 func (h *Human) Respawn() {
-	// Find a safe respawn location away from all balls
+	// Default fallback - center position
 	safeX := h.Bounds.Width / 2
 	safeY := h.Bounds.Height / 2
 
@@ -499,6 +499,77 @@ func (h *Human) Respawn() {
 	h.DirectionArrow.Show()
 
 	h.UpdatePosition()
+}
+
+// RespawnWithBalls brings the human back to life at the safest location away from all balls
+func (h *Human) RespawnWithBalls(balls []*Ball) {
+	safeX, safeY := h.findSafestRespawnLocation(balls)
+
+	// Set new position
+	h.X = safeX
+	h.Y = safeY
+
+	// Reset state
+	h.IsExploding = false
+	h.IsActive = true
+	h.RespawnTimer = 0
+	h.Rotation = 0 // Reset rotation
+
+	// Show human components
+	h.ImageContainer.Show()
+	h.DirectionArrow.Show()
+
+	h.UpdatePosition()
+}
+
+// findSafestRespawnLocation finds the position that maximizes distance from all balls
+func (h *Human) findSafestRespawnLocation(balls []*Ball) (float32, float32) {
+	// Define search grid parameters
+	gridSize := 20 // 20x20 grid for reasonable performance
+	margin := h.Size + 10 // Margin from screen edges
+
+	bestX := h.Bounds.Width / 2
+	bestY := h.Bounds.Height / 2
+	maxMinDistance := float32(0) // Maximum of minimum distances to all balls
+
+	// Search through grid positions
+	for i := 0; i < gridSize; i++ {
+		for j := 0; j < gridSize; j++ {
+			// Calculate candidate position
+			x := margin + (float32(i)/float32(gridSize-1))*(h.Bounds.Width-2*margin)
+			y := 50 + margin + (float32(j)/float32(gridSize-1))*(h.Bounds.Height-100-2*margin) // Account for UI area
+
+			// Find minimum distance to all balls from this position
+			minDistanceToBalls := float32(math.Inf(1))
+
+			for _, ball := range balls {
+				if !ball.IsAnimated {
+					continue
+				}
+
+				// Calculate distance to this ball
+				dx := x - ball.X
+				dy := y - ball.Y
+				distance := float32(math.Sqrt(float64(dx*dx + dy*dy)))
+
+				// Account for ball radius and human size for true clearance
+				clearance := distance - ball.Radius - h.Size
+
+				if clearance < minDistanceToBalls {
+					minDistanceToBalls = clearance
+				}
+			}
+
+			// If this position has better minimum distance, use it
+			if minDistanceToBalls > maxMinDistance {
+				maxMinDistance = minDistanceToBalls
+				bestX = x
+				bestY = y
+			}
+		}
+	}
+
+	return bestX, bestY
 }
 
 // UpdatePointing updates the arms to point at the closest ball
@@ -640,8 +711,9 @@ func (h *Human) CheckBulletCollisions(balls []*Ball) {
 				// Apply repulsion force to the ball
 				if distance > 0 {
 					// Calculate repulsion direction (away from bullet impact point)
-					repelX := dx / distance // Normalized direction away from bullet
-					repelY := dy / distance
+					// dx = bullet.X - ball.X, so -dx points from bullet to ball (true repulsion)
+					repelX := -dx / distance // Normalized direction away from bullet
+					repelY := -dy / distance
 
 					// Apply repulsion force to ball velocity
 					repulsionStrength := float32(0.8) // Adjust this to control repulsion intensity

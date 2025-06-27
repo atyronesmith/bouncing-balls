@@ -257,7 +257,7 @@ func (b *Ball) UpdatePositionWithHuman(humanX, humanY float32) {
 
 		if distance > 0 {
 			// Normalize direction and apply offset (iris can move within the eyeball)
-			maxOffset := currentRadius * 0.25 // Maximum iris offset from center
+			maxOffset := currentRadius * 0.5 // Maximum iris offset from center
 			irisOffsetX = (dx / distance) * maxOffset
 			irisOffsetY = (dy / distance) * maxOffset
 		}
