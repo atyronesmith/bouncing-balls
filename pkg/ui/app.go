@@ -324,8 +324,18 @@ func (a *App) Run() {
 	a.content.Add(ball2.Text)
 	a.content.Add(ball3.Text)
 
-	// Add human figure PNG image
-	a.content.Add(a.human.ImageContainer)
+	// Add human figure components (drawn programmatically with ball-tracking eyes)
+	a.content.Add(a.human.Head)
+	a.content.Add(a.human.Body)
+	a.content.Add(a.human.LeftEye)
+	a.content.Add(a.human.RightEye)
+	a.content.Add(a.human.LeftPupil)
+	a.content.Add(a.human.RightPupil)
+	a.content.Add(a.human.LeftArm)
+	a.content.Add(a.human.RightArm)
+	a.content.Add(a.human.LeftLeg)
+	a.content.Add(a.human.RightLeg)
+	a.content.Add(a.human.DirectionArrow)
 
 	// Add dragon figure components
 	dragonComponents := a.dragon.GetVisualComponents()
@@ -427,8 +437,18 @@ func (a *App) resetAll() {
 	a.human.IsActive = true
 	a.human.RespawnTimer = 0
 	a.human.Rotation = 0 // Reset rotation
-	// Show human image container
-	a.human.ImageContainer.Show()
+	// Show human components
+	a.human.Head.Show()
+	a.human.Body.Show()
+	a.human.LeftEye.Show()
+	a.human.RightEye.Show()
+	a.human.LeftPupil.Show()
+	a.human.RightPupil.Show()
+	a.human.LeftArm.Show()
+	a.human.RightArm.Show()
+	a.human.LeftLeg.Show()
+	a.human.RightLeg.Show()
+	a.human.DirectionArrow.Show()
 	a.human.UpdatePosition()
 
 	// Reset dragon

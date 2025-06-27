@@ -6,8 +6,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/storage"
 )
 
 // Bullet represents a bullet fired by the human
@@ -33,11 +31,19 @@ type Human struct {
 	KeyDown  bool // down arrow key pressed
 	KeyLeft  bool // left arrow key pressed
 	KeyRight bool // right arrow key pressed
-	// Visual components - replaced with PNG image
-	Image            *canvas.Image   // PNG image with transparency
-	ImageContainer   *fyne.Container // Container to hold the image
-	DirectionArrow   *canvas.Line    // Arrow showing facing direction
-	Rotation         float64         // Current rotation angle in radians
+	// Visual components - drawn programmatically
+	Head           *canvas.Circle    // Head (circle)
+	Body           *canvas.Rectangle // Body (rectangle)
+	LeftEye        *canvas.Circle    // Left eye
+	RightEye       *canvas.Circle    // Right eye
+	LeftPupil      *canvas.Circle    // Left pupil (tracks closest ball)
+	RightPupil     *canvas.Circle    // Right pupil (tracks closest ball)
+	LeftArm        *canvas.Rectangle // Left arm
+	RightArm       *canvas.Rectangle // Right arm
+	LeftLeg        *canvas.Rectangle // Left leg
+	RightLeg       *canvas.Rectangle // Right leg
+	DirectionArrow *canvas.Line      // Arrow showing facing direction
+	Rotation       float64           // Current rotation angle in radians
 	// Explosion particles
 	ExplosionParticles []*canvas.Circle
 	// Bullet system
@@ -61,15 +67,91 @@ func NewHuman(x, y, size float32) *Human {
 		Rotation:      0,  // Start facing right (0 radians)
 	}
 
-	// Load PNG image with transparency
-	resource := storage.NewFileURI("./human.png")
-	human.Image = canvas.NewImageFromURI(resource)
-	human.Image.FillMode = canvas.ImageFillOriginal
-	human.Image.ScaleMode = canvas.ImageScaleSmooth
+	// Create head (circle)
+	human.Head = &canvas.Circle{
+		FillColor: color.RGBA{R: 255, G: 255, B: 255, A: 255}, // White head
+		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 255},     // Black outline
+		StrokeWidth: 2.0,
+	}
+	human.Head.Resize(fyne.NewSize(size*0.8, size*0.8))
+	human.Head.Move(fyne.NewPos(x-size*0.4, y-size*0.4))
 
-	// Set the image size based on the human size parameter
-	imageSize := fyne.NewSize(size*1.2, size*1.2)
-	human.Image.Resize(imageSize)
+	// Create body (rectangle)
+	human.Body = &canvas.Rectangle{
+		FillColor: color.RGBA{R: 255, G: 255, B: 255, A: 255}, // White body
+		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 255},     // Black outline
+		StrokeWidth: 2.0,
+	}
+	human.Body.Resize(fyne.NewSize(size*0.6, size*0.4))
+	human.Body.Move(fyne.NewPos(x-size*0.3, y-size*0.2))
+
+	// Create eyes
+	human.LeftEye = &canvas.Circle{
+		FillColor: color.RGBA{R: 0, G: 0, B: 0, A: 255}, // Black eye
+		StrokeColor: color.RGBA{R: 255, G: 255, B: 255, A: 255},
+		StrokeWidth: 2.0,
+	}
+	human.LeftEye.Resize(fyne.NewSize(size*0.1, size*0.1))
+	human.LeftEye.Move(fyne.NewPos(x-size*0.35, y-size*0.3))
+
+	human.RightEye = &canvas.Circle{
+		FillColor: color.RGBA{R: 0, G: 0, B: 0, A: 255}, // Black eye
+		StrokeColor: color.RGBA{R: 255, G: 255, B: 255, A: 255},
+		StrokeWidth: 2.0,
+	}
+	human.RightEye.Resize(fyne.NewSize(size*0.1, size*0.1))
+	human.RightEye.Move(fyne.NewPos(x+size*0.35, y-size*0.3))
+
+	// Create pupils
+	human.LeftPupil = &canvas.Circle{
+		FillColor: color.RGBA{R: 255, G: 255, B: 255, A: 255}, // White pupil
+		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 255},
+		StrokeWidth: 2.0,
+	}
+	human.LeftPupil.Resize(fyne.NewSize(size*0.05, size*0.05))
+	human.LeftPupil.Move(fyne.NewPos(x-size*0.35, y-size*0.3))
+
+	human.RightPupil = &canvas.Circle{
+		FillColor: color.RGBA{R: 255, G: 255, B: 255, A: 255}, // White pupil
+		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 255},
+		StrokeWidth: 2.0,
+	}
+	human.RightPupil.Resize(fyne.NewSize(size*0.05, size*0.05))
+	human.RightPupil.Move(fyne.NewPos(x+size*0.35, y-size*0.3))
+
+	// Create arms
+	human.LeftArm = &canvas.Rectangle{
+		FillColor: color.RGBA{R: 255, G: 255, B: 255, A: 255}, // White arm
+		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 255},     // Black outline
+		StrokeWidth: 2.0,
+	}
+	human.LeftArm.Resize(fyne.NewSize(size*0.2, size*0.2))
+	human.LeftArm.Move(fyne.NewPos(x-size*0.3, y-size*0.2))
+
+	human.RightArm = &canvas.Rectangle{
+		FillColor: color.RGBA{R: 255, G: 255, B: 255, A: 255}, // White arm
+		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 255},     // Black outline
+		StrokeWidth: 2.0,
+	}
+	human.RightArm.Resize(fyne.NewSize(size*0.2, size*0.2))
+	human.RightArm.Move(fyne.NewPos(x+size*0.3, y-size*0.2))
+
+	// Create legs
+	human.LeftLeg = &canvas.Rectangle{
+		FillColor: color.RGBA{R: 255, G: 255, B: 255, A: 255}, // White leg
+		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 255},     // Black outline
+		StrokeWidth: 2.0,
+	}
+	human.LeftLeg.Resize(fyne.NewSize(size*0.2, size*0.4))
+	human.LeftLeg.Move(fyne.NewPos(x-size*0.3, y+size*0.2))
+
+	human.RightLeg = &canvas.Rectangle{
+		FillColor: color.RGBA{R: 255, G: 255, B: 255, A: 255}, // White leg
+		StrokeColor: color.RGBA{R: 0, G: 0, B: 0, A: 255},     // Black outline
+		StrokeWidth: 2.0,
+	}
+	human.RightLeg.Resize(fyne.NewSize(size*0.2, size*0.4))
+	human.RightLeg.Move(fyne.NewPos(x+size*0.3, y+size*0.2))
 
 	// Create direction arrow to show facing direction
 	human.DirectionArrow = &canvas.Line{
@@ -77,31 +159,47 @@ func NewHuman(x, y, size float32) *Human {
 		StrokeWidth: 3.0,
 	}
 
-	// Create a container to hold the image and arrow
-	human.ImageContainer = container.NewWithoutLayout(human.Image, human.DirectionArrow)
-
 	// Set initial position
 	human.UpdatePosition()
 
 	return human
 }
 
-// UpdatePosition updates the visual position of the human image with direction arrow
+// UpdatePosition updates the visual position of all human components
 func (h *Human) UpdatePosition() {
 	if !h.IsActive {
 		return
 	}
 
-	// Center the image on the human's position (no jumping around)
-	imageSize := h.Image.Size()
-	baseX := h.X - imageSize.Width/2
-	baseY := h.Y - imageSize.Height/2
+	// Update all component positions relative to human center
+	// Head
+	h.Head.Move(fyne.NewPos(h.X-h.Size*0.4, h.Y-h.Size*0.6))
+	h.Head.Resize(fyne.NewSize(h.Size*0.8, h.Size*0.8))
 
-	// Always keep the image centered at the human's actual position
-	h.Image.Move(fyne.NewPos(baseX, baseY))
+	// Body
+	h.Body.Move(fyne.NewPos(h.X-h.Size*0.3, h.Y-h.Size*0.2))
+	h.Body.Resize(fyne.NewSize(h.Size*0.6, h.Size*0.8))
 
-	// Keep consistent size
-	h.Image.Resize(fyne.NewSize(h.Size*1.2, h.Size*1.2))
+	// Eyes (fixed positions on head)
+	h.LeftEye.Move(fyne.NewPos(h.X-h.Size*0.25, h.Y-h.Size*0.5))
+	h.LeftEye.Resize(fyne.NewSize(h.Size*0.15, h.Size*0.15))
+
+	h.RightEye.Move(fyne.NewPos(h.X+h.Size*0.1, h.Y-h.Size*0.5))
+	h.RightEye.Resize(fyne.NewSize(h.Size*0.15, h.Size*0.15))
+
+	// Arms
+	h.LeftArm.Move(fyne.NewPos(h.X-h.Size*0.6, h.Y-h.Size*0.1))
+	h.LeftArm.Resize(fyne.NewSize(h.Size*0.25, h.Size*0.35))
+
+	h.RightArm.Move(fyne.NewPos(h.X+h.Size*0.35, h.Y-h.Size*0.1))
+	h.RightArm.Resize(fyne.NewSize(h.Size*0.25, h.Size*0.35))
+
+	// Legs
+	h.LeftLeg.Move(fyne.NewPos(h.X-h.Size*0.25, h.Y+h.Size*0.3))
+	h.LeftLeg.Resize(fyne.NewSize(h.Size*0.2, h.Size*0.5))
+
+	h.RightLeg.Move(fyne.NewPos(h.X+h.Size*0.05, h.Y+h.Size*0.3))
+	h.RightLeg.Resize(fyne.NewSize(h.Size*0.2, h.Size*0.5))
 
 	// Update direction arrow to show facing direction
 	h.updateDirectionArrow()
@@ -124,6 +222,100 @@ func (h *Human) updateDirectionArrow() {
 	// Set arrow from human center to direction
 	h.DirectionArrow.Position1 = fyne.NewPos(h.X, h.Y)
 	h.DirectionArrow.Position2 = fyne.NewPos(endX, endY)
+}
+
+// updateEyeTracking makes the pupils look at the closest ball
+func (h *Human) updateEyeTracking() {
+	if !h.IsActive {
+		return
+	}
+
+	// Get left and right eye centers
+	leftEyeCenterX := h.X - h.Size*0.175 // Center of left eye
+	leftEyeCenterY := h.Y - h.Size*0.425
+
+	rightEyeCenterX := h.X + h.Size*0.175 // Center of right eye
+	rightEyeCenterY := h.Y - h.Size*0.425
+
+	// Default pupil positions (center of eyes) when no balls
+	leftPupilX := leftEyeCenterX
+	leftPupilY := leftEyeCenterY
+	rightPupilX := rightEyeCenterX
+	rightPupilY := rightEyeCenterY
+
+	// Find closest ball for eye tracking (we'll need to pass balls to this method)
+	// For now, pupils stay centered - we'll update this when we modify the Update method
+
+	// Position pupils (slightly smaller than eyes)
+	pupilSize := h.Size * 0.08
+	h.LeftPupil.Move(fyne.NewPos(leftPupilX-pupilSize/2, leftPupilY-pupilSize/2))
+	h.LeftPupil.Resize(fyne.NewSize(pupilSize, pupilSize))
+
+	h.RightPupil.Move(fyne.NewPos(rightPupilX-pupilSize/2, rightPupilY-pupilSize/2))
+	h.RightPupil.Resize(fyne.NewSize(pupilSize, pupilSize))
+}
+
+// updateEyeTrackingWithBalls makes the pupils look at the closest ball
+func (h *Human) updateEyeTrackingWithBalls(balls []*Ball) {
+	if !h.IsActive {
+		return
+	}
+
+	// Get left and right eye centers
+	leftEyeCenterX := h.X - h.Size*0.175
+	leftEyeCenterY := h.Y - h.Size*0.425
+
+	rightEyeCenterX := h.X + h.Size*0.175
+	rightEyeCenterY := h.Y - h.Size*0.425
+
+	// Default pupil positions (center of eyes)
+	leftPupilX := leftEyeCenterX
+	leftPupilY := leftEyeCenterY
+	rightPupilX := rightEyeCenterX
+	rightPupilY := rightEyeCenterY
+
+	// Find closest ball
+	closestBall := h.findClosestBall(balls)
+	if closestBall != nil {
+		// Calculate direction from each eye to the closest ball
+		// Left eye
+		leftDx := closestBall.X - leftEyeCenterX
+		leftDy := closestBall.Y - leftEyeCenterY
+		leftDistance := float32(math.Sqrt(float64(leftDx*leftDx + leftDy*leftDy)))
+
+		if leftDistance > 0 {
+			// Normalize direction and scale by eye radius to keep pupil inside eye
+			eyeRadius := h.Size * 0.06 // Maximum pupil movement within eye
+			leftNormX := leftDx / leftDistance
+			leftNormY := leftDy / leftDistance
+
+			leftPupilX = leftEyeCenterX + leftNormX*eyeRadius
+			leftPupilY = leftEyeCenterY + leftNormY*eyeRadius
+		}
+
+		// Right eye
+		rightDx := closestBall.X - rightEyeCenterX
+		rightDy := closestBall.Y - rightEyeCenterY
+		rightDistance := float32(math.Sqrt(float64(rightDx*rightDx + rightDy*rightDy)))
+
+		if rightDistance > 0 {
+			// Normalize direction and scale by eye radius
+			eyeRadius := h.Size * 0.06
+			rightNormX := rightDx / rightDistance
+			rightNormY := rightDy / rightDistance
+
+			rightPupilX = rightEyeCenterX + rightNormX*eyeRadius
+			rightPupilY = rightEyeCenterY + rightNormY*eyeRadius
+		}
+	}
+
+	// Position pupils
+	pupilSize := h.Size * 0.08
+	h.LeftPupil.Move(fyne.NewPos(leftPupilX-pupilSize/2, leftPupilY-pupilSize/2))
+	h.LeftPupil.Resize(fyne.NewSize(pupilSize, pupilSize))
+
+	h.RightPupil.Move(fyne.NewPos(rightPupilX-pupilSize/2, rightPupilY-pupilSize/2))
+	h.RightPupil.Resize(fyne.NewSize(pupilSize, pupilSize))
 }
 
 // GetFacingDirection returns a string description of which direction the human is facing
@@ -225,6 +417,9 @@ func (h *Human) Update(balls []*Ball) {
 
 	// Update visual position
 	h.UpdatePosition()
+
+	// Update eye tracking to look at closest ball
+	h.updateEyeTrackingWithBalls(balls)
 
 	// Update pointing (now just a stub)
 	h.UpdatePointing(balls)
@@ -397,7 +592,16 @@ func (h *Human) Explode() {
 	h.Deaths++           // Increment death counter
 
 	// Hide human components
-	h.ImageContainer.Hide()
+	h.Head.Hide()
+	h.Body.Hide()
+	h.LeftEye.Hide()
+	h.RightEye.Hide()
+	h.LeftPupil.Hide()
+	h.RightPupil.Hide()
+	h.LeftArm.Hide()
+	h.RightArm.Hide()
+	h.LeftLeg.Hide()
+	h.RightLeg.Hide()
 	h.DirectionArrow.Hide()
 
 	// Create explosion particles
@@ -491,7 +695,16 @@ func (h *Human) Respawn() {
 	h.Rotation = 0 // Reset rotation
 
 	// Show human components
-	h.ImageContainer.Show()
+	h.Head.Show()
+	h.Body.Show()
+	h.LeftEye.Show()
+	h.RightEye.Show()
+	h.LeftPupil.Show()
+	h.RightPupil.Show()
+	h.LeftArm.Show()
+	h.RightArm.Show()
+	h.LeftLeg.Show()
+	h.RightLeg.Show()
 	h.DirectionArrow.Show()
 
 	h.UpdatePosition()
@@ -512,7 +725,16 @@ func (h *Human) RespawnWithBalls(balls []*Ball) {
 	h.Rotation = 0 // Reset rotation
 
 	// Show human components
-	h.ImageContainer.Show()
+	h.Head.Show()
+	h.Body.Show()
+	h.LeftEye.Show()
+	h.RightEye.Show()
+	h.LeftPupil.Show()
+	h.RightPupil.Show()
+	h.LeftArm.Show()
+	h.RightArm.Show()
+	h.LeftLeg.Show()
+	h.RightLeg.Show()
 	h.DirectionArrow.Show()
 
 	h.UpdatePosition()
