@@ -15,6 +15,11 @@ GO := go
 GOOS := $(shell go env GOOS)
 GOARCH := $(shell go env GOARCH)
 
+# CGO settings to suppress macOS duplicate library warnings
+ifeq ($(GOOS),darwin)
+    export CGO_LDFLAGS=-Wl,-no_warn_duplicate_libraries
+endif
+
 # Build flags
 LDFLAGS := -ldflags "-s -w"
 BUILD_FLAGS := $(LDFLAGS)
