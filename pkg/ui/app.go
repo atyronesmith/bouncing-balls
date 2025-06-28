@@ -336,8 +336,10 @@ func (a *App) Run() {
 	a.content.Add(a.human.RightArm)
 	a.content.Add(a.human.LeftLeg)
 	a.content.Add(a.human.RightLeg)
-	a.content.Add(a.human.DirectionArrow)
-	a.content.Add(a.human.FiringEffect)   // Add firing effect on top
+	// Add firing components
+	a.content.Add(a.human.FiringEye)
+	a.content.Add(a.human.FiringIris)
+	a.content.Add(a.human.FiringPupil)
 
 	// Add dragon figure components
 	dragonComponents := a.dragon.GetVisualComponents()
@@ -450,9 +452,10 @@ func (a *App) resetAll() {
 	a.human.RightArm.Show()
 	a.human.LeftLeg.Show()
 	a.human.RightLeg.Show()
-	a.human.DirectionArrow.Show()
 	a.human.FiringCircle.Show()
-	a.human.FiringEffect.Show()
+	a.human.FiringEye.Show()
+	a.human.FiringIris.Show()
+	a.human.FiringPupil.Show()
 	a.human.UpdatePosition()
 
 	// Reset dragon
